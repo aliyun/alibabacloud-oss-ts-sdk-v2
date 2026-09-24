@@ -1,0 +1,11 @@
+{
+  "name": "entry",
+  "version": "1.0.0",
+  "description": "OpenHarmony samples for the Alibaba Cloud OSS SDK v2.",
+  "main": "",
+  "author": "",
+  "license": "",
+  "dependencies": {
+    "@alicloud/oss-v2": "^0.1.0-alpha.0"
+  }
+}

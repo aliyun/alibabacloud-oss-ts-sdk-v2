@@ -1,0 +1,15 @@
+docs/*
+node_modules/
+package-lock.json
+.vscode/
+dist/
+coverage/
+/ohos-har/oss-v2/.test/
+reference/
+alicloud-oss-v2-*.tgz
+alicloud-oss-v2-*.har
+# Written by a *failing* browser test only, so a clean run never produces them and
+# they are easy to miss until one goes red locally or the CI workspace is inspected.
+__screenshots__/
+.vitest-attachments/
+*.tsbuildinfo

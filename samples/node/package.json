@@ -1,0 +1,8 @@
+{
+  "name": "oss-v2-node-samples",
+  "private": true,
+  "type": "module",
+  "dependencies": {
+    "@alicloud/oss-v2": "^0.1.0-alpha.0"
+  }
+}

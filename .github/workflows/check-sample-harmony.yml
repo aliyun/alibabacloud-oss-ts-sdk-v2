@@ -1,0 +1,36 @@
+name: Harmony Samples
+
+on:
+  push:
+    branches: ["main", "dev-*"]
+  pull_request:
+    branches: ["main", "dev-*"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harmony-samples:
+    runs-on: ubuntu-latest
+    container: ghcr.io/sanchuanhehe/harmony-next-pipeline-docker/harmonyos-ci-image:v5.0.4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --no-package-lock
+      - run: npm run build:har
+      - name: Install the har and sample test dependencies
+        run: ohpm install --no-save ../../../alicloud-oss-v2-*.har @ohos/hypium@1.0.19 @ohos/hamock@1.0.0
+        working-directory: samples/harmony/entry
+      - name: Build the sample
+        run: hvigorw assembleHap --mode module -p product=default -p buildMode=debug --no-daemon
+        working-directory: samples/harmony
+      - name: Compile the device test
+        run: hvigorw assembleHap --mode module -p module=entry@ohosTest -p product=default -p buildMode=debug --no-daemon
+        working-directory: samples/harmony
+      - run: test -f entry/build/default/outputs/default/entry-default-unsigned.hap
+        working-directory: samples/harmony
+      - run: test -f entry/build/default/outputs/ohosTest/entry-ohosTest-unsigned.hap
+        working-directory: samples/harmony

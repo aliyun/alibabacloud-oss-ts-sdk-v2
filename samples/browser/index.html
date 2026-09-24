@@ -1,0 +1,26 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>OSS TypeScript SDK — browser samples</title>
+    <style>
+      body { font-family: system-ui, sans-serif; margin: 2rem; max-width: 60rem; }
+      button { margin: 0.15rem; }
+      #output { background: #111; color: #eee; padding: 1rem; min-height: 8rem; white-space: pre-wrap; }
+      section { margin: 0.75rem 0; }
+    </style>
+  </head>
+  <body>
+    <h1>OSS TypeScript SDK — browser samples</h1>
+    <p>
+      Fill in <code>src/config.js</code> for your account and start the STS backend
+      (<code>node server/sts.mjs</code>) before clicking a sample.
+    </p>
+    <label>key / prefix / bucket name: <input id="key" value="sample/hello.txt" size="40" /></label>
+    <section><strong>api</strong><span id="api"></span></section>
+    <section><strong>scenario</strong><span id="scenario"></span></section>
+    <pre id="output"></pre>
+    <script type="module" src="/src/main.js"></script>
+  </body>
+</html>

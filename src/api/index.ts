@@ -1,0 +1,12 @@
+// Command classes, one re-export per operation category.
+export * from './object-basic.js'
+export * from './object-multipart.js'
+export * from './bucket-basic.js'
+export * from './object-acl.js'
+export * from './object-tagging.js'
+export * from './object-symlink.js'
+export * from './object-process.js'
+export * from './bucket-acl.js'
+export * from './bucket-versioning.js'
+export * from './bucket-referer.js'
+export * from './service.js'

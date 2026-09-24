@@ -1,0 +1,8 @@
+{
+  "name": "@alicloud/oss-v2",
+  "version": "0.1.0-alpha.0",
+  "description": "Alibaba Cloud OSS SDK v2 for OpenHarmony",
+  "main": "Index.ets",
+  "license": "Apache-2.0",
+  "dependencies": {}
+}

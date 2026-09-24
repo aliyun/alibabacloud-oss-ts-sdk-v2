@@ -1,0 +1,10 @@
+{
+  "module": {
+    "name": "oss_v2",
+    "type": "har",
+    "deviceTypes": [
+      "default",
+      "tablet"
+    ]
+  }
+}

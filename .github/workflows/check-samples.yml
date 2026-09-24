@@ -1,0 +1,36 @@
+name: Check Samples
+
+on:
+  push:
+    branches: ["main", "dev-*"]
+  pull_request:
+    branches: ["main", "dev-*"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  samples:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --no-package-lock
+      - run: npm run build
+      - run: npm pack --pack-destination "$RUNNER_TEMP"
+      - name: Install the SDK into samples
+        run: |
+          TARBALL="$(find "$RUNNER_TEMP" -maxdepth 1 -type f -name 'alicloud-oss-v2-*.tgz' -print -quit)"
+          test -n "$TARBALL"
+          for dir in samples/browser samples/node; do
+            npm install --prefix "$dir" --no-package-lock --no-save "$TARBALL"
+          done
+      - name: Compile browser samples
+        run: npx --no-install vite build
+        working-directory: samples/browser
+      - name: Compile Node samples
+        run: ../../node_modules/.bin/esbuild api/*.mjs scenario/*.mjs --bundle --platform=node --format=esm --outdir=dist
+        working-directory: samples/node

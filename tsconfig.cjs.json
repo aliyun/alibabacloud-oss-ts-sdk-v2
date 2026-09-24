@@ -1,0 +1,16 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": false,
+    "module": "CommonJS",
+    "moduleResolution": "Node10",
+    "verbatimModuleSyntax": false,
+    "outDir": "dist/cjs",
+    "rootDir": "src",
+    "declaration": true,
+    "sourceMap": true,
+    "inlineSources": true
+  },
+  "include": ["src", "types/ohos-net-http.d.ts", "types/ohos-file-fs.d.ts", "types/ohos-util.d.ts"],
+  "exclude": ["src/**/__lint_probe__.ts"]
+}

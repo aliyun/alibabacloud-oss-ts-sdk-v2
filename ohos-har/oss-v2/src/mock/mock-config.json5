@@ -1,0 +1,11 @@
+{
+  "@ohos.util": {
+    "source": "src/test/unit/mock/util-mock.ets"
+  },
+  "@ohos.net.http": {
+    "source": "src/test/unit/mock/net-http-mock.ets"
+  },
+  "@ohos.file.fs": {
+    "source": "src/test/unit/mock/file-fs-mock.ets"
+  }
+}

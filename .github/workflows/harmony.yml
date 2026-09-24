@@ -1,0 +1,33 @@
+name: Harmony Unit
+
+on:
+  push:
+    branches: ["main", "dev-*"]
+  pull_request:
+    branches: ["main", "dev-*"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harmony-unit:
+    runs-on: ubuntu-latest
+    container: ghcr.io/sanchuanhehe/harmony-next-pipeline-docker/harmonyos-ci-image:v5.0.4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --no-package-lock
+      - run: npm run typecheck:harmony
+      - run: npm run build:har
+      - name: Install the unit-test dependencies
+        run: ohpm install
+        working-directory: ohos-har
+      - name: Run HAR unit tests
+        run: hvigorw test --mode module -p product=default -p coverage=false --no-daemon
+        working-directory: ohos-har
+      - name: Verify unit-test result
+        run: "grep -Eq '^Tests run: [1-9][0-9]*, Failure: 0, Error: 0,' oss-v2/.test/default/intermediates/test/coverage_data/test_result.txt"
+        working-directory: ohos-har

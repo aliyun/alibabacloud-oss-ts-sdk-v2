@@ -1,0 +1,101 @@
+{
+  "name": "@alicloud/oss-v2",
+  "version": "0.1.0-alpha.0",
+  "description": "Alibaba Cloud OSS SDK v2 for TypeScript (node / browser / OpenHarmony)",
+  "license": "Apache-2.0",
+  "type": "module",
+  "sideEffects": false,
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "files": [
+    "dist",
+    "!dist/**/*harmony*",
+    "!dist/**/harmony/**",
+    "README.md",
+    "README-CN.md",
+    "LICENSE"
+  ],
+  "main": "./dist/cjs/index.js",
+  "types": "./dist/cjs/index.d.ts",
+  "exports": {
+    ".": {
+      "import": {
+        "types": "./dist/esm/index.d.ts",
+        "default": "./dist/esm/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/index.d.ts",
+        "default": "./dist/cjs/index.js"
+      }
+    },
+    "./node": {
+      "import": {
+        "types": "./dist/esm/runtime/node/index.d.ts",
+        "default": "./dist/esm/runtime/node/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/runtime/node/index.d.ts",
+        "default": "./dist/cjs/runtime/node/index.js"
+      }
+    },
+    "./browser": {
+      "import": {
+        "types": "./dist/esm/runtime/browser/index.d.ts",
+        "default": "./dist/esm/runtime/browser/index.js"
+      },
+      "require": {
+        "types": "./dist/cjs/runtime/browser/index.d.ts",
+        "default": "./dist/cjs/runtime/browser/index.js"
+      }
+    },
+    "./package.json": "./package.json"
+  },
+  "browser": {
+    "./dist/esm/runtime/default-transport.js": "./dist/esm/runtime/default-transport.browser.js",
+    "./dist/cjs/runtime/default-transport.js": "./dist/cjs/runtime/default-transport.browser.js",
+    "./dist/esm/runtime/mime-type.js": "./dist/esm/runtime/mime-type.browser.js",
+    "./dist/cjs/runtime/mime-type.js": "./dist/cjs/runtime/mime-type.browser.js",
+    "./dist/esm/runtime/client-extensions.js": "./dist/esm/runtime/client-extensions.browser.js",
+    "./dist/cjs/runtime/client-extensions.js": "./dist/cjs/runtime/client-extensions.browser.js",
+    "./dist/esm/runtime/text-codec.js": "./dist/esm/runtime/text-codec.browser.js",
+    "./dist/cjs/runtime/text-codec.js": "./dist/cjs/runtime/text-codec.browser.js"
+  },
+  "publishConfig": {
+    "access": "public"
+  },
+  "scripts": {
+    "typecheck": "tsc -p tsconfig.json",
+    "typecheck:core": "tsc -p tsconfig.core.json",
+    "typecheck:harmony": "tsc -p tsconfig.harmony.json",
+    "lint": "eslint .",
+    "test": "vitest run --project unit",
+    "test:browser": "vitest run --project browser",
+    "test:integration": "vitest run --project integration",
+    "clean": "node -e \"require('node:fs').rmSync('dist',{recursive:true,force:true})\"",
+    "build": "npm run clean && npm run build:esm && npm run build:cjs",
+    "build:esm": "tsc -p tsconfig.esm.json",
+    "build:cjs": "tsc -p tsconfig.cjs.json && node scripts/finish-cjs.mjs",
+    "stage:har": "npm run build && node scripts/stage-har.mjs",
+    "build:har": "npm run stage:har && node scripts/build-har.mjs",
+    "size": "node scripts/size-gate.mjs",
+    "check": "npm run lint && npm run typecheck && npm run typecheck:core && npm run typecheck:harmony && npm run test"
+  },
+  "devDependencies": {
+    "@types/mime-types": "^3.0.1",
+    "@types/node": "^22.19.0",
+    "@vitest/browser": "^4.1.11",
+    "@vitest/browser-playwright": "^4.1.11",
+    "esbuild": "^0.28.2",
+    "eslint": "^9.39.5",
+    "playwright": "^1.62.1",
+    "typescript": "~5.9.3",
+    "typescript-eslint": "^8.67.0",
+    "vitest": "^4.1.10"
+  },
+  "dependencies": {
+    "http-proxy-agent": "^7",
+    "https-proxy-agent": "^7",
+    "mime-types": "^2.0.0 || ^3.0.0"
+  }
+}

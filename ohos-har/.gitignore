@@ -1,0 +1,7 @@
+/.hvigor/
+/oh_modules/
+oh-package-lock.json5
+/oss-v2/build/
+/oss-v2/oh_modules/
+/oss-v2/BuildProfile.ets
+/oss-v2/src/main/ets/
