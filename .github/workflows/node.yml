@@ -28,5 +28,5 @@ jobs:
       - run: npm run test
       - run: npm run build
       - run: npx --yes publint@0.3 run
-      - run: npx --yes @arethetypeswrong/cli@0.18 --pack
+      - run: npx --yes @arethetypeswrong/cli@0.18 --pack --profile node16
       - run: npm pack --dry-run
