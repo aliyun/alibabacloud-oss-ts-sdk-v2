@@ -194,8 +194,8 @@ describe('createNodeTransport', () => {
   })
 
   it('stops pulling a streamed body while the socket is full', async () => {
-    const chunkCount = 64
-    const chunkSize = 64 * 1024
+    const chunkCount = 256
+    const chunkSize = 1024 * 1024
     let produced = 0
     const body: StreamLike = {
       read: (): Promise<Uint8Array | null> => {
@@ -228,8 +228,8 @@ describe('createNodeTransport', () => {
   })
 
   it('cancels the body cursor when aborted in flight', async () => {
-    const chunkCount = 64
-    const chunkSize = 64 * 1024
+    const chunkCount = 256
+    const chunkSize = 1024 * 1024
     let produced = 0
     let canceled = 0
     const body: StreamLike = {
