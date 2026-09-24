@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.core.json",
+  "include": ["src", "types/arkts-globals.d.ts", "types/ohos-net-http.d.ts", "types/ohos-file-fs.d.ts", "types/ohos-util.d.ts"],
+  "exclude": [
+    "src/client.ts",
+    "src/index.ts",
+    "src/internal/client-impl.ts",
+    "src/runtime/browser",
+    "src/runtime/node",
+    "src/runtime/default-transport.browser.ts",
+    "src/runtime/default-transport.ts",
+    "src/runtime/client-extensions.browser.ts",
+    "src/runtime/client-extensions.ts",
+    "src/runtime/mime-type.browser.ts",
+    "src/runtime/mime-type.ts",
+    "src/runtime/text-codec.browser.ts",
+    "src/runtime/text-codec.ts"
+  ]
+}

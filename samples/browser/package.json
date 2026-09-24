@@ -1,0 +1,16 @@
+{
+  "name": "oss-v2-browser-samples",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "sts": "node server/sts.mjs",
+    "dev": "vite"
+  },
+  "dependencies": {
+    "@alicloud/credentials": "^2.4.7",
+    "@alicloud/oss-v2": "^0.1.0-alpha.0"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0"
+  }
+}

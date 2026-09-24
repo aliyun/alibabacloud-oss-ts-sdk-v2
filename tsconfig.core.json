@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "lib": ["ES2020"],
+    "types": [],
+    "noEmit": true
+  },
+  "include": ["src", "types/arkts-globals.d.ts"],
+  "exclude": ["src/client.ts", "src/index.ts", "src/internal/client-impl.ts", "src/runtime"]
+}

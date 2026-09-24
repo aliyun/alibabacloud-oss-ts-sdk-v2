@@ -1,0 +1,24 @@
+name: Harmony Build
+
+on:
+  push:
+    branches: ["main", "dev-*"]
+  pull_request:
+    branches: ["main", "dev-*"]
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  harmony-build:
+    runs-on: ubuntu-latest
+    container: ghcr.io/sanchuanhehe/harmony-next-pipeline-docker/harmonyos-ci-image:v5.0.4
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - run: npm install --no-package-lock
+      - run: npm run typecheck:harmony
+      - run: npm run build:har
