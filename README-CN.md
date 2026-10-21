@@ -132,6 +132,10 @@ try {
 
 [`samples`](./samples/INDEX.md) 目录按平台（Node、浏览器、OpenHarmony）组织，为每个操作提供可运行示例，并包含预签名、STS 凭证和请求取消等场景示例。Node 使用环境变量中的 AccessKey 进行签名；浏览器或设备端应使用从您自己的后端获取的 STS 凭证进行签名。
 
+## 迁移指南
+
+如果你正从 V1（[ali-oss](https://github.com/ali-sdk/ali-oss)）升级，请参阅[迁移指南](MIGRATION_CN.md)，了解 API 变更、配置方式、错误处理等详细对比。
+
 ## 许可协议
 
 Apache License 2.0，请参阅 [LICENSE](./LICENSE)。
