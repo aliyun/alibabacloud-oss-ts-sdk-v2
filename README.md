@@ -139,6 +139,10 @@ platform (Node, browser, OpenHarmony), plus scenario samples for presigning, STS
 cancellation. Node signs with an AccessKey from the environment; a browser or a device signs with STS
 credentials from your own backend instead.
 
+## Migration Guide
+
+If you are upgrading from V1 ([ali-oss](https://github.com/ali-sdk/ali-oss)), see the [Migration Guide](MIGRATION.md) for a detailed comparison of API changes, configuration, error handling, and more.
+
 ## License
 
 Apache License 2.0. See [LICENSE](./LICENSE).
