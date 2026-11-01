@@ -20,8 +20,12 @@ export function bytesBody(data: Uint8Array): ResponseBody {
           done = true
           return Promise.resolve(data)
         },
+        cancel: () => {
+          done = true
+        },
       }
     },
+    cancel: () => {},
   }
 }
 
@@ -29,9 +33,10 @@ export function textBody(text: string): ResponseBody {
   return bytesBody(utf8Encode(text))
 }
 
-/** An empty body that counts reads. */
+/** An empty body that counts reads and cancels. */
 export class SpyBody implements ResponseBody {
   reads = 0
+  cancels = 0
 
   bytes(): Promise<Uint8Array> {
     this.reads++
@@ -46,6 +51,10 @@ export class SpyBody implements ResponseBody {
   stream(): StreamLike {
     this.reads++
     return { read: () => Promise.resolve(null) }
+  }
+
+  cancel(): void {
+    this.cancels++
   }
 }
 

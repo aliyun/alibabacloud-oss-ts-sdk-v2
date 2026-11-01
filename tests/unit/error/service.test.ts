@@ -14,6 +14,7 @@ function response(statusCode: number, headers: Record<string, string>, body?: st
       bytes: () => Promise.resolve(bytes),
       text: () => Promise.resolve(body ?? ''),
       stream: () => ({ read: () => Promise.resolve(null) }),
+      cancel: () => {},
     },
   }
 }
@@ -118,6 +119,7 @@ describe('toServiceError', () => {
           // eslint-disable-next-line @typescript-eslint/prefer-promise-reject-errors
           text: () => Promise.reject(Object.create(null)),
           stream: () => ({ read: () => Promise.resolve(null) }),
+          cancel: () => {},
         },
       },
       'GET /',
@@ -143,6 +145,7 @@ describe('toServiceError', () => {
           bytes: () => Promise.resolve(new Uint8Array()),
           text: () => Promise.reject(hostile),
           stream: () => ({ read: () => Promise.resolve(null) }),
+          cancel: () => {},
         },
       },
       'GET /',

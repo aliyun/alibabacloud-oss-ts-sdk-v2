@@ -80,7 +80,14 @@ function nodeResponseBody(body: IncomingMessage, translate: (error: unknown) => 
           inner.read().catch((error: unknown) => {
             throw translate(error)
           }),
+        cancel: async (): Promise<void> => {
+          await inner.cancel?.()
+        },
       }
+    },
+    // `destroy` is idempotent and ends the incoming message, so an abandoned body frees the socket.
+    cancel: (): void => {
+      body.destroy()
     },
   }
 }

@@ -7,7 +7,7 @@ import {
 } from 'node:http'
 import { createServer as createHttpsServer, type Server as HttpsServer } from 'node:https'
 import type { AddressInfo, Socket } from 'node:net'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import { CanceledError, RequestError } from '../../../../src/error/types.js'
 import { ClientErrorRetryable } from '../../../../src/retry/retryable.js'
 import type { AbortSignalLike } from '../../../../src/utils/abort.js'
@@ -528,6 +528,31 @@ describe('createNodeTransport', () => {
 
     expect(ended).toBe(false)
     expect(await response.body?.text()).toBe('firstsecond')
+  })
+
+  it('cancels an abandoned streamed body and closes the connection', async () => {
+    let closed = false
+    handler = (req, res) => {
+      req.resume()
+      res.writeHead(200)
+      res.write('first')
+      res.on('close', () => {
+        closed = true
+      })
+    }
+    const response = await transport.send(
+      { method: 'GET', url: base + '/k', headers: createHeaderFields({}) },
+      { responseStream: true },
+    )
+
+    const stream = response.body!.stream()
+    expect(utf8Decode((await stream.read())!)).toBe('first')
+    await response.body!.cancel()
+    await response.body!.cancel()
+
+    await vi.waitFor(() => {
+      expect(closed).toBe(true)
+    })
   })
 
   it('buffers a 203 or a 4xx body despite responseStream: true', async () => {

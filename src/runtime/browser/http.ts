@@ -31,7 +31,12 @@ function fetchBody(body: ByteContent | undefined): BodyInit | undefined {
 }
 
 /** Wraps a fetch response body and translates cancellation failures. */
-function fetchResponseBody(response: Response, reason: () => Error | undefined, release: () => void): ResponseBody {
+function fetchResponseBody(
+  response: Response,
+  reason: () => Error | undefined,
+  release: () => void,
+  controller: AbortController,
+): ResponseBody {
   const translate = (error: Error): never => {
     release()
     throw reason() ?? error
@@ -59,7 +64,15 @@ function fetchResponseBody(response: Response, reason: () => Error | undefined, 
           if (chunk === null) release()
           return chunk
         },
+        cancel: async (): Promise<void> => {
+          await source.cancel?.()
+          release()
+        },
       }
+    },
+    cancel: (): void => {
+      controller.abort()
+      release()
     },
   }
 }
@@ -108,7 +121,11 @@ export function createBrowserTransport(_options?: HttpTransportOptions): HttpTra
         controller.abort()
       }
       if (signal !== undefined) signal.addEventListener('abort', onAbort)
+      // Idempotent, since a body and the abort path can both settle the same request.
+      let released = false
       const release = (): void => {
+        if (released) return
+        released = true
         if (signal !== undefined) signal.removeEventListener('abort', onAbort)
       }
 
@@ -127,7 +144,7 @@ export function createBrowserTransport(_options?: HttpTransportOptions): HttpTra
             status: response.statusText,
             statusCode: response.status,
             headers: toRecord(response.headers),
-            body: fetchResponseBody(response, () => failure, release),
+            body: fetchResponseBody(response, () => failure, release, controller),
           }
         }
         const bytes = new Uint8Array(await response.arrayBuffer())

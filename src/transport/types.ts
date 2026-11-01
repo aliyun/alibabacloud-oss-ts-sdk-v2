@@ -45,6 +45,11 @@ export interface ResponseBody {
   bytes(): Promise<Uint8Array>
   text(): Promise<string>
   stream(): StreamLike
+  /**
+   * Releases the underlying resource without draining the body. Idempotent, and a no-op for a body
+   * already in memory. Pending and later reads observe end-of-stream or fail.
+   */
+  cancel(): void | Promise<void>
 }
 
 /** A request as the transport takes it. */

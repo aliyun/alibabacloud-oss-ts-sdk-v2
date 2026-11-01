@@ -39,6 +39,7 @@ function oneShotBody(text: string): ResponseBody {
     stream: () => {
       throw new Error('not used by this test')
     },
+    cancel: () => {},
   }
 }
 

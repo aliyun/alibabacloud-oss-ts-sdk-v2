@@ -17,6 +17,8 @@ export function bufferedBody(bytes: Uint8Array): ResponseBody {
         },
       }
     },
+    // The bytes are already in memory, so there is no resource to release.
+    cancel: (): void => {},
   }
 }
 

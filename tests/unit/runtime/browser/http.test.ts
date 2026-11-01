@@ -1,6 +1,6 @@
 import { createServer, type IncomingMessage, type Server, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
-import { afterAll, beforeAll, beforeEach, describe, expect, it } from 'vitest'
+import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AbortSignalLike } from '../../../../src/utils/abort.js'
 import { CanceledError, RequestError, SerializationError } from '../../../../src/error/types.js'
 import { ClientErrorRetryable } from '../../../../src/retry/retryable.js'
@@ -189,6 +189,33 @@ describe('createBrowserTransport', () => {
 
     expect(signal.added).toBe(1)
     expect(signal.removed).toBe(1)
+  })
+
+  it('cancels an abandoned streamed body and releases its abort listener', async () => {
+    let closed = false
+    handler = (req, res) => {
+      req.resume()
+      res.writeHead(200)
+      res.write('first')
+      res.on('close', () => {
+        closed = true
+      })
+    }
+    const signal = countingSignal()
+    const response = await transport.send(
+      { method: 'GET', url: base + '/k', headers: createHeaderFields({}) },
+      { responseStream: true, signal },
+    )
+
+    const stream = response.body!.stream()
+    expect(utf8Decode((await stream.read())!)).toBe('first')
+    await response.body!.cancel()
+    await response.body!.cancel()
+
+    expect(signal.removed).toBe(1)
+    await vi.waitFor(() => {
+      expect(closed).toBe(true)
+    })
   })
 
   it('removes its abort listener once a stream() body reaches its end', async () => {
