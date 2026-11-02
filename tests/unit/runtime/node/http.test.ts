@@ -591,6 +591,28 @@ describe('createNodeTransport', () => {
     expect(error).toBeInstanceOf(RequestError)
     expect(new ClientErrorRetryable().isErrorRetryable(error!)).toBe(true)
   })
+
+  it('destroys the response when a non-streaming body read fails', async () => {
+    let closed = false
+    handler = (req, res) => {
+      req.resume()
+      res.writeHead(200)
+      res.write('partial')
+      res.on('close', () => {
+        closed = true
+      })
+      setTimeout(() => res.destroy(), 20)
+    }
+    const error = await transport
+      .send({ method: 'GET', url: base + '/k', headers: createHeaderFields({}) }, {})
+      .then(() => undefined)
+      .catch((err: unknown) => err as Error)
+    expect(error).toBeInstanceOf(RequestError)
+    expect(new ClientErrorRetryable().isErrorRetryable(error!)).toBe(true)
+    await vi.waitFor(() => {
+      expect(closed).toBe(true)
+    })
+  })
 })
 
 async function sendWithBodyError(failure: Error): Promise<Error> {

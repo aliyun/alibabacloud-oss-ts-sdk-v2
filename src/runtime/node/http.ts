@@ -246,7 +246,11 @@ export function createNodeTransport(options?: NodeTransportOptions): HttpTranspo
               cleanup()
               resolve(envelope(bufferedBody(bytes)))
             },
-            (error: unknown): void => rejectOnce(translate(error)),
+            (error: unknown): void => {
+              // The body could not be drained; tear it down so the socket is not left dangling.
+              res.destroy()
+              rejectOnce(translate(error))
+            },
           )
         }
 

@@ -156,6 +156,8 @@ export function createBrowserTransport(_options?: HttpTransportOptions): HttpTra
           body: bufferedBody(bytes),
         }
       } catch (error) {
+        // A failed body read may leave the fetch response stream open; abort it defensively.
+        controller.abort()
         release()
         if (failure !== undefined) throw failure
         // Fetch reports network failures as `TypeError`.
