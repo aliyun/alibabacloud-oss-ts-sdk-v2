@@ -81,6 +81,8 @@ function nodeResponseBody(body: IncomingMessage, translate: (error: unknown) => 
             throw translate(error)
           }),
         cancel: async (): Promise<void> => {
+          // `body.destroy()` is the reliable way to free the socket; `inner.cancel()` cleans up the wrapper.
+          body.destroy()
           await inner.cancel?.()
         },
       }
@@ -246,7 +248,11 @@ export function createNodeTransport(options?: NodeTransportOptions): HttpTranspo
               cleanup()
               resolve(envelope(bufferedBody(bytes)))
             },
-            (error: unknown): void => rejectOnce(translate(error)),
+            (error: unknown): void => {
+              // The body could not be drained; tear it down so the socket is not left dangling.
+              res.destroy()
+              rejectOnce(translate(error))
+            },
           )
         }
 

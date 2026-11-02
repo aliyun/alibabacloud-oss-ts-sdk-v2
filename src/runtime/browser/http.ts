@@ -65,8 +65,12 @@ function fetchResponseBody(
           return chunk
         },
         cancel: async (): Promise<void> => {
-          await source.cancel?.()
-          release()
+          // Cleanup must run even if the underlying stream cancellation fails.
+          try {
+            await source.cancel?.()
+          } finally {
+            release()
+          }
         },
       }
     },
@@ -156,6 +160,8 @@ export function createBrowserTransport(_options?: HttpTransportOptions): HttpTra
           body: bufferedBody(bytes),
         }
       } catch (error) {
+        // A failed body read may leave the fetch response stream open; abort it defensively.
+        controller.abort()
         release()
         if (failure !== undefined) throw failure
         // Fetch reports network failures as `TypeError`.

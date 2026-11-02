@@ -61,6 +61,10 @@ export class TextResponseBody implements ResponseBody {
     }
     return new SingleChunkStream(new Uint8Array(bytes))
   }
+
+  cancel(): void {
+    // The body is fully in memory; nothing to release.
+  }
 }
 
 export class ResponseMessageImpl implements ResponseMessage {
