@@ -83,6 +83,9 @@ describe.skipIf(!live)('bucket configuration against the live service', () => {
     )
     expect(put.statusCode).toBe(200)
 
+    // Bucket configuration writes are eventually consistent; wait before reading back.
+    await new Promise((resolve) => setTimeout(resolve, 2000))
+
     const got = await client.send(new GetBucketReferer({ bucket }))
     expect(got.refererConfiguration?.allowEmptyReferer).toBe(true)
     expect(got.refererConfiguration?.refererList?.referers).toContain('https://www.example.com')
@@ -137,6 +140,9 @@ describe.skipIf(!live)('bucket versioning against the live service', () => {
       new PutBucketVersioning({ bucket: versioned, versioningConfiguration: { status: 'Enabled' } }),
     )
     expect(put.statusCode).toBe(200)
+
+    // Bucket configuration writes are eventually consistent; wait before reading back.
+    await new Promise((resolve) => setTimeout(resolve, 2000))
 
     const got = await client.send(new GetBucketVersioning({ bucket: versioned }))
     expect(got.versioningConfiguration?.status).toBe('Enabled')
