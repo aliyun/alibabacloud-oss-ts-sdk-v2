@@ -76,6 +76,7 @@ const SURFACE = [
   'SignerV4',
   'StandardRetryer',
   'StaticCredentialsProvider',
+  'StreamConsumedError',
   'StreamContent',
   'StringContent',
   'UploadPart',

@@ -42,8 +42,13 @@ export interface HeaderFields {
 
 /** A response body, readable once in whichever of the three shapes the caller wants. */
 export interface ResponseBody {
+  /**
+   * Reads the whole body into memory. Repeat calls return the cached result, but a body that was
+   * read as a stream cannot be read this way.
+   */
   bytes(): Promise<Uint8Array>
   text(): Promise<string>
+  /** Opens the body as a single-use stream. A second `stream()` or a later `bytes()` throws. */
   stream(): StreamLike
   /**
    * Releases the underlying resource without draining the body. Idempotent, and a no-op for a body

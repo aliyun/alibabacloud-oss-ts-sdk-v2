@@ -1,4 +1,4 @@
-import { CanceledError, RequestError, SerializationError } from '../../error/types.js'
+import { CanceledError, RequestError, SerializationError, StreamConsumedError } from '../../error/types.js'
 import type {
   RequestMessage,
   ResponseMessage,
@@ -43,7 +43,9 @@ function fetchResponseBody(
   }
 
   let buffered: Promise<Uint8Array> | undefined
+  let streamed = false
   const bytes = (): Promise<Uint8Array> => {
+    if (streamed) return Promise.reject(new StreamConsumedError())
     if (buffered === undefined) {
       buffered = response.arrayBuffer().then((buffer) => {
         release()
@@ -57,6 +59,9 @@ function fetchResponseBody(
     bytes,
     text: async (): Promise<string> => utf8Decode(await bytes()),
     stream: (): StreamLike => {
+      // A single `ReadableStream` feeds one consumer; a second reader would split its chunks.
+      if (streamed || buffered !== undefined) throw new StreamConsumedError()
+      streamed = true
       const source = fromReadableStream(response.body)
       return {
         read: async (): Promise<Uint8Array | null> => {

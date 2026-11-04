@@ -8,7 +8,7 @@ import {
 import { createServer as createHttpsServer, type Server as HttpsServer } from 'node:https'
 import type { AddressInfo, Socket } from 'node:net'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
-import { CanceledError, RequestError } from '../../../../src/error/types.js'
+import { CanceledError, RequestError, StreamConsumedError } from '../../../../src/error/types.js'
 import { ClientErrorRetryable } from '../../../../src/retry/retryable.js'
 import type { AbortSignalLike } from '../../../../src/utils/abort.js'
 import type { StreamLike } from '../../../../src/transport/types.js'
@@ -312,6 +312,36 @@ describe('createNodeTransport', () => {
     }
     const response = await transport.send({ method: 'GET', url: base + '/k', headers: createHeaderFields({}) }, {})
     expect(await drain(response.body!.stream())).toBe('first second third')
+  })
+
+  it('rejects a second stream() once the body has been streamed', async () => {
+    const response = await transport.send(
+      { method: 'GET', url: base + '/k', headers: createHeaderFields({}) },
+      { responseStream: true },
+    )
+    await drain(response.body!.stream())
+
+    expect(() => response.body!.stream()).toThrow(StreamConsumedError)
+  })
+
+  it('rejects bytes() after stream()', async () => {
+    const response = await transport.send(
+      { method: 'GET', url: base + '/k', headers: createHeaderFields({}) },
+      { responseStream: true },
+    )
+    response.body!.stream()
+
+    await expect(response.body!.bytes()).rejects.toBeInstanceOf(StreamConsumedError)
+  })
+
+  it('rejects stream() after bytes()', async () => {
+    const response = await transport.send(
+      { method: 'GET', url: base + '/k', headers: createHeaderFields({}) },
+      { responseStream: true },
+    )
+    await response.body!.bytes()
+
+    expect(() => response.body!.stream()).toThrow(StreamConsumedError)
   })
 
   it('lowercases response header names and joins repeated ones', async () => {

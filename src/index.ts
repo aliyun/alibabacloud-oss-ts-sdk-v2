@@ -54,6 +54,7 @@ export {
   CredentialsError,
   RequestError,
   CanceledError,
+  StreamConsumedError,
   NotSupportedError,
 } from './error/types.js'
 export type { ServiceErrorFields } from './error/types.js'

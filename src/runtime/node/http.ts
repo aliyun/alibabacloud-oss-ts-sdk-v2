@@ -11,7 +11,7 @@ import { Readable, Transform, type TransformCallback } from 'node:stream'
 import { clearTimeout, setTimeout } from 'node:timers'
 import { HttpProxyAgent } from 'http-proxy-agent'
 import { HttpsProxyAgent } from 'https-proxy-agent'
-import { CanceledError, RequestError } from '../../error/types.js'
+import { CanceledError, RequestError, StreamConsumedError } from '../../error/types.js'
 import type {
   RequestMessage,
   ResponseMessage,
@@ -61,7 +61,9 @@ async function collect(readable: AsyncIterable<Uint8Array>): Promise<Uint8Array>
 /** Wraps an `IncomingMessage` as a `ResponseBody` and translates read failures. */
 function nodeResponseBody(body: IncomingMessage, translate: (error: unknown) => Error): ResponseBody {
   let buffered: Promise<Uint8Array> | undefined
+  let streamed = false
   const bytes = (): Promise<Uint8Array> => {
+    if (streamed) return Promise.reject(new StreamConsumedError())
     // An `IncomingMessage` is buffered at most once.
     if (buffered === undefined) {
       buffered = collect(body).catch((error: unknown) => {
@@ -74,6 +76,9 @@ function nodeResponseBody(body: IncomingMessage, translate: (error: unknown) => 
     bytes,
     text: async (): Promise<string> => utf8Decode(await bytes()),
     stream: (): StreamLike => {
+      // A single `IncomingMessage` feeds one consumer; a second reader would split its chunks.
+      if (streamed || buffered !== undefined) throw new StreamConsumedError()
+      streamed = true
       const inner = fromReadable(body)
       return {
         read: (): Promise<Uint8Array | null> =>

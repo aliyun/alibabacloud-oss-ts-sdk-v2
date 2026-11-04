@@ -2,7 +2,7 @@ import { createServer, type IncomingMessage, type Server, type ServerResponse } 
 import type { AddressInfo } from 'node:net'
 import { afterAll, beforeAll, beforeEach, describe, expect, it, vi } from 'vitest'
 import type { AbortSignalLike } from '../../../../src/utils/abort.js'
-import { CanceledError, RequestError, SerializationError } from '../../../../src/error/types.js'
+import { CanceledError, RequestError, SerializationError, StreamConsumedError } from '../../../../src/error/types.js'
 import { ClientErrorRetryable } from '../../../../src/retry/retryable.js'
 import type { StreamLike } from '../../../../src/transport/types.js'
 import { bytesBody, stringBody, streamBody } from '../../../../src/transport/content.js'
@@ -136,6 +136,35 @@ describe('createBrowserTransport', () => {
       parts.push(utf8Decode(chunk))
     }
     expect(parts.join('')).toBe('served')
+  })
+
+  it('rejects a second stream() once the body has been streamed', async () => {
+    const response = await transport.send(
+      { method: 'GET', url: base + '/k', headers: createHeaderFields({}) },
+      { responseStream: true },
+    )
+    const stream = response.body!.stream()
+    for (;;) {
+      if ((await stream.read()) === null) break
+    }
+
+    expect(() => response.body!.stream()).toThrow(StreamConsumedError)
+  })
+
+  it('rejects bytes() after stream() and stream() after bytes()', async () => {
+    const streamed = await transport.send(
+      { method: 'GET', url: base + '/k', headers: createHeaderFields({}) },
+      { responseStream: true },
+    )
+    streamed.body!.stream()
+    await expect(streamed.body!.bytes()).rejects.toBeInstanceOf(StreamConsumedError)
+
+    const buffered = await transport.send(
+      { method: 'GET', url: base + '/k', headers: createHeaderFields({}) },
+      { responseStream: true },
+    )
+    await buffered.body!.bytes()
+    expect(() => buffered.body!.stream()).toThrow(StreamConsumedError)
   })
 
   it('returns a 4xx as a response, not an error', async () => {

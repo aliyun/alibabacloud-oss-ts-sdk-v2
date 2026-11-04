@@ -187,6 +187,14 @@ export class CanceledError extends OssError {
   }
 }
 
+/** The response body was read as a stream, or streamed after being read as bytes. */
+export class StreamConsumedError extends OssError {
+  constructor() {
+    super('the response body has already been consumed')
+    this.name = 'StreamConsumedError'
+  }
+}
+
 /** The current runtime cannot provide the requested SDK capability. */
 export class NotSupportedError extends OssError {
   constructor(capability: string) {
