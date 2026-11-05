@@ -39,6 +39,16 @@
         "default": "./dist/cjs/runtime/node/index.js"
       }
     },
+    "./node/fs": {
+      "import": {
+        "types": "./dist/esm/runtime/node/fs.d.ts",
+        "default": "./dist/esm/runtime/node/fs.js"
+      },
+      "require": {
+        "types": "./dist/cjs/runtime/node/fs.d.ts",
+        "default": "./dist/cjs/runtime/node/fs.js"
+      }
+    },
     "./browser": {
       "import": {
         "types": "./dist/esm/runtime/browser/index.d.ts",
