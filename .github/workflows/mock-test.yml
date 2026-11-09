@@ -58,9 +58,13 @@ jobs:
       - name: Install ohpm dependencies
         working-directory: ohos-har
         run: |
-          ohpm config set registry https://ohpm.openharmony.cn/ohpm/
-          ohpm config set strict_ssl false
-          ohpm install --all
+          call ohpm config set registry https://ohpm.openharmony.cn/ohpm/
+          call ohpm config set strict_ssl false
+          call ohpm install --all
+          if not exist oh_modules\@ohos\hypium (
+            echo ::error::@ohos/hypium was not installed
+            exit /b 1
+          )
       - name: Run ArkTS mock tests
         run: npm run test:ohpm-mock
       - name: Publish test log
