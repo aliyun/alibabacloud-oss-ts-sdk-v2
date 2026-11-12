@@ -1,21 +1,13 @@
-import { run } from '../api/PutObject'
+import { OssConsole } from './OssConsole'
 
 @Entry
 @Component
 struct Index {
-  @State message: string = 'OSS SDK verify build'
-
   build() {
     Column() {
-      Text(this.message)
-        .fontSize(24)
-        .onClick(() => {
-          run().catch((error: Error) => {
-            console.error('verify run failed: ' + error)
-          })
-        })
+      OssConsole()
     }
-    .height('100%')
     .width('100%')
+    .height('100%')
   }
 }

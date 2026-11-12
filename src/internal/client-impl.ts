@@ -14,6 +14,7 @@ import { missingTransport, TransportMiddleware } from './transport-middleware.js
 import { StandardRetryer } from '../retry/standard.js'
 import type { Retryer } from '../retry/types.js'
 import { createDefaultTransport } from '../runtime/default-transport.js'
+import { tuneRequestForSigning } from '../runtime/request-tune.js'
 import { isDefaultSignedHeader } from '../signer/types.js'
 import type { Signer, SigningContext } from '../signer/types.js'
 import { SignerV1 } from '../signer/v1.js'
@@ -346,7 +347,9 @@ export class ClientImpl {
     const parameters = input.parameters
     if (parameters !== undefined && Object.keys(parameters).length > 0) url += '?' + buildQueryString(parameters)
 
-    return { method: input.method, url, headers, body: toByteContent(input.body) }
+    const request = { method: input.method, url, headers, body: toByteContent(input.body) }
+    tuneRequestForSigning(request)
+    return request
   }
 
   /** Completes an upload's serializer marker while the feature is enabled. */

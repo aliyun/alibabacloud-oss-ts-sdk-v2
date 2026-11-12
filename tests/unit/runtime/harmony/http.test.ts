@@ -145,6 +145,14 @@ describe('createHarmonyTransport', () => {
     expect(fake.calls[0].options.header['x-oss-meta-a']).toBe('1')
   })
 
+  it('treats a missing response body as empty bytes', async () => {
+    for (const result of [null, undefined]) {
+      const fake = fakeModule(() => Promise.resolve({ responseCode: 200, header: {}, result }))
+      const response = await createHarmonyTransport({ http: fake }).send(request({ method: 'PUT' }), {})
+      expect((await response.body?.bytes())?.byteLength).toBe(0)
+    }
+  })
+
   it('asks for an ArrayBuffer and maps responseCode onto statusCode', async () => {
     const fake = fakeModule(() =>
       Promise.resolve({ responseCode: 404, header: {}, result: toArrayBuffer(utf8Encode('')) }),

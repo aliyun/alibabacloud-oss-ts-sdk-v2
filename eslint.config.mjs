@@ -57,7 +57,7 @@ const platformRestrictedImports = {
   patterns: [
     { group: ['node:*', 'fs', 'path', 'crypto', 'http', 'https', 'stream', 'url', 'buffer'], message: 'Everything outside src/runtime must reach platform capability through an injected interface (§5, §7). Put the platform import in src/runtime/node/ and inject what you need.' },
     { group: ['@ohos.*', '@kit.*'], message: 'OpenHarmony modules belong in src/runtime/harmony/ only (§3), which declares the shape it needs as an interface; take that interface as a parameter instead.' },
-    { group: ['**/runtime/**', '!**/runtime/default-transport.js', '!**/runtime/client-extensions.js', '!**/runtime/mime-type.js', '!**/runtime/text-codec.js'], message: 'Only src/runtime may name a platform adapter; everything else takes an interface such as HttpTransport as a parameter and lets the caller pick the implementation.' },
+    { group: ['**/runtime/**', '!**/runtime/default-transport.js', '!**/runtime/client-extensions.js', '!**/runtime/mime-type.js', '!**/runtime/text-codec.js', '!**/runtime/request-tune.js'], message: 'Only src/runtime may name a platform adapter; everything else takes an interface such as HttpTransport as a parameter and lets the caller pick the implementation.' },
   ],
 }
 
@@ -92,7 +92,7 @@ export default tseslint.config(
     },
   },
   {
-    files: ['src/runtime/harmony/**/*.ts', 'src/runtime/default-transport.harmony.ts', 'src/runtime/client-extensions.harmony.ts', 'src/runtime/mime-type.harmony.ts', 'src/runtime/text-codec.harmony.ts'],
+    files: ['src/runtime/harmony/**/*.ts', 'src/runtime/default-transport.harmony.ts', 'src/runtime/client-extensions.harmony.ts', 'src/runtime/mime-type.harmony.ts', 'src/runtime/text-codec.harmony.ts', 'src/runtime/request-tune.harmony.ts'],
     rules: {
       'no-restricted-syntax': ['error', ...arktsRestrictedSyntax],
     },

@@ -6,6 +6,6 @@
   "author": "",
   "license": "",
   "dependencies": {
-    "@alicloud/oss-v2": "^0.1.0-alpha.0"
+    "@alicloud/oss-v2": "file:../../../alicloud-oss-v2-0.1.0-alpha.0.har"
   }
 }

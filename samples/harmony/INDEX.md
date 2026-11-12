@@ -1,17 +1,13 @@
 # OpenHarmony (ArkTS) Samples
 
-Samples for a device or emulator. This directory is its own DevEco project: the samples import
-`@alicloud/oss-v2` by name, declared as a version dependency in
-[entry/oh-package.json5](entry/oh-package.json5), so install it there:
-
-    cd samples/harmony/entry
-    ohpm install
-
-**Installing from source:** build this repository's har and install it here:
+Samples for a device or emulator. This directory is its own DevEco project. `@alicloud/oss-v2` is
+not published to ohpm, so [entry/oh-package.json5](entry/oh-package.json5) depends on the har built
+from this repository. Build it once, then install:
 
     npm install                                             # in the repo root
-    npm run build:har                                       # in the repo root
-    ohpm install --no-save ../../../alicloud-oss-v2-*.har   # in samples/harmony/entry
+    npm run build:har                                       # writes alicloud-oss-v2-0.1.0-alpha.0.har
+    cd samples/harmony
+    ohpm install --all
 
 The client code reads like node's — `new Client({ region, credentialsProvider })` — and the API calls
 are the same. Two things differ from node, both forced by the platform:
@@ -21,8 +17,10 @@ are the same. Two things differ from node, both forced by the platform:
   [entry/src/main/ets/SampleConfig.ets](entry/src/main/ets/SampleConfig.ets) holds them as constants
   you fill in; the refetching provider is in
   [entry/src/main/ets/scenario/StsCredentials.ets](entry/src/main/ets/scenario/StsCredentials.ets).
-- **No runner.** There is no CLI here. Each sample exports `run(arg)`; call it from an ability or a
-  button's `onClick` in your own code.
+- **The home page is the runner.** [entry/src/main/ets/pages/OssConsole.ets](entry/src/main/ets/pages/OssConsole.ets)
+  is an ArkUI page: type STS credentials, a bucket and a key, then call Put/Get/Head/Delete, list and
+  presign. The files under `api/` and `scenario/` still export `run(arg)` if you want to call one
+  operation from your own ability.
 
 ## Directory structure
 

@@ -2,7 +2,7 @@ import { cpSync, mkdirSync, readFileSync, readdirSync, rmSync, writeFileSync } f
 
 const HAR_MODULE = 'ohos-har/oss-v2'
 const STAGED = `${HAR_MODULE}/src/main/ets`
-const HARMONY_ENTRIES = ['default-transport', 'client-extensions', 'mime-type', 'text-codec']
+const HARMONY_ENTRIES = ['default-transport', 'client-extensions', 'mime-type', 'text-codec', 'request-tune']
 
 rmSync(STAGED, { recursive: true, force: true })
 mkdirSync(`${STAGED}/runtime`, { recursive: true })
