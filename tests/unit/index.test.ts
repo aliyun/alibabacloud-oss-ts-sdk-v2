@@ -268,6 +268,7 @@ describe('the OpenHarmony type-check project', () => {
     'src/runtime/client-extensions.harmony.ts',
     'src/runtime/mime-type.harmony.ts',
     'src/runtime/text-codec.harmony.ts',
+    'src/runtime/request-tune.harmony.ts',
   ])('checks %s, which the core project excludes', (entry) => {
     expect(excludedBy(config.exclude, entry)).toBe(false)
     expect(excludedBy(core.exclude, entry)).toBe(true)
