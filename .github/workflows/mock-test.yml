@@ -54,6 +54,8 @@ jobs:
           java -version
           hvigorw -v
       - run: npm install --no-package-lock
+      - name: Run netstack mock tests
+        run: npm run test:mock
       - run: npm run stage:har
       - name: Install ohpm dependencies
         working-directory: ohos-har
