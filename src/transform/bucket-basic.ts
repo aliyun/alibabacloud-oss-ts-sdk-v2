@@ -205,6 +205,7 @@ export function serializeDeleteBucket(request: DeleteBucketRequest): OperationIn
   const bucket = requireField(request.bucket, 'bucket')
 
   const headers = createHeaderFields(request.headers)
+  setContentTypeIfAbsent(headers, 'application/xml')
   setDefaultContentMd5(headers)
 
   const parameters: Record<string, string> = {}

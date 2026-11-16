@@ -118,6 +118,7 @@ export function serializeUploadPart(request: UploadPartRequest): OperationInput 
   const partNumber = requireField(request.partNumber, 'partNumber')
 
   const headers = createHeaderFields(request.headers)
+  setContentTypeIfAbsent(headers, 'application/xml')
 
   const parameters: Record<string, string> = {}
   copyInto(parameters, request.parameters)

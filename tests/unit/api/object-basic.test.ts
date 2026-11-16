@@ -446,6 +446,7 @@ describe('DeleteObject serialize', () => {
     expect(serialized.key).toBe('dir/file.txt')
     expect(headersOf(serialized)).toEqual({
       'x-oss-request-payer': 'requester',
+      'Content-Type': 'application/xml',
       // The md5 of no bytes, this operation having no body to hash.
       'Content-MD5': '1B2M2Y8AsgTpgAmY7PhCfg==',
     })
@@ -473,7 +474,10 @@ describe('DeleteObject serialize', () => {
 
     const serialized = await command.serialize(command.input)
 
-    expect(headersOf(serialized)).toEqual({ 'content-md5': 'XUFAKrxLKna5cZ2REBfFkg==' })
+    expect(headersOf(serialized)).toEqual({
+      'Content-Type': 'application/xml',
+      'content-md5': 'XUFAKrxLKna5cZ2REBfFkg==',
+    })
   })
 })
 
@@ -557,6 +561,7 @@ describe('CopyObject serialize', () => {
       'x-oss-tagging-directive': 'Replace',
       'x-oss-request-payer': 'requester',
       'x-oss-meta-author': 'alice',
+      'Content-Type': 'application/xml',
       'Content-MD5': '1B2M2Y8AsgTpgAmY7PhCfg==',
     })
   })

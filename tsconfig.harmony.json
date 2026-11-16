@@ -14,7 +14,6 @@
     "src/runtime/mime-type.browser.ts",
     "src/runtime/mime-type.ts",
     "src/runtime/text-codec.browser.ts",
-    "src/runtime/text-codec.ts",
-    "src/runtime/request-tune.ts"
+    "src/runtime/text-codec.ts"
   ]
 }
