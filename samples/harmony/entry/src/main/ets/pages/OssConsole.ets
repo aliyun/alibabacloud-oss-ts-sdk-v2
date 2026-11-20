@@ -1,3 +1,6 @@
+import { picker } from '@kit.CoreFileKit'
+import fs from '@ohos.file.fs'
+import { BusinessError } from '@ohos.base'
 import {
   Client,
   DeleteBucket,
@@ -6,12 +9,62 @@ import {
   HeadObject,
   ListObjectsV2,
   OperationError,
+  OperationInput,
+  OperationOutput,
   PresignOptions,
+  ProgressHandler,
   PutBucket,
   PutObject,
   ServiceError,
   StaticCredentialsProvider,
 } from '@alicloud/oss-v2'
+
+interface UploadCallbacks {
+  progressHandler: ProgressHandler
+}
+
+/** Puts an object and reports upload progress through the callback `Client.send` already reads. */
+class PutObjectUpload {
+  readonly opName: string = 'PutObject'
+  readonly input: Object
+  private readonly command: PutObject
+  private readonly handler: ProgressHandler
+
+  constructor(command: PutObject, handler: ProgressHandler) {
+    this.command = command
+    this.input = command.input
+    this.handler = handler
+  }
+
+  serialize(_input: Object): Promise<OperationInput> {
+    return this.command.serialize(this.command.input)
+  }
+
+  deserialize(output: OperationOutput) {
+    return this.command.deserialize(output)
+  }
+
+  serializeInner(_input: Object): UploadCallbacks {
+    const callbacks: UploadCallbacks = { progressHandler: this.handler }
+    return callbacks
+  }
+}
+
+function fileNameOf(uri: string): string {
+  const path = uri.split('?')[0]
+  const slash = path.lastIndexOf('/')
+  const raw = slash >= 0 ? path.substring(slash + 1) : path
+  return decodeURIComponent(raw)
+}
+
+async function readLocalFile(uri: string): Promise<Uint8Array> {
+  const stat = await fs.stat(uri)
+  const file = await fs.open(uri, fs.OpenMode.READ_ONLY)
+  const buffer = new ArrayBuffer(stat.size)
+  const read = await fs.read(file.fd, buffer, { offset: 0, length: stat.size })
+  await fs.close(file)
+  return new Uint8Array(buffer, 0, read)
+}
 
 /** ArkUI console for the same calls the `api/` samples make. Credentials stay in this page. */
 @Component
@@ -25,6 +78,10 @@ export struct OssConsole {
   @State objectKey: string = 'sample/hello.txt'
   @State prefix: string = 'sample/'
   @State bodyText: string = 'hello from the OSS TypeScript SDK'
+  @State selectedUri: string = ''
+  @State selectedName: string = ''
+  @State showProgress: boolean = false
+  @State uploadPercent: number = 0
   @State output: string = ''
 
   build() {
@@ -56,6 +113,23 @@ export struct OssConsole {
           .height(80)
           .width('100%')
           .onChange((value: string) => { this.bodyText = value })
+        Button('选择本地文件').onClick(() => { this.pickFile() })
+        Text(this.selectedName.length > 0 ? '已选文件: ' + this.selectedName : '未选文件时上传文本框内容')
+          .fontSize(12)
+          .fontColor('#666666')
+          .width('100%')
+        Row({ space: 8 }) {
+          Checkbox()
+            .select(this.showProgress)
+            .onChange((value: boolean) => { this.showProgress = value })
+          Text('显示上传进度').fontSize(13)
+        }.width('100%')
+        if (this.showProgress) {
+          Progress({ value: this.uploadPercent, total: 100, type: ProgressType.Linear })
+            .width('100%')
+            .height(12)
+            .color('#0A59F7')
+        }
         Flex({ wrap: FlexWrap.Wrap }) {
           Button('PutObject').onClick(() => { this.putObject() })
           Button('GetObject').onClick(() => { this.getObject() })
@@ -160,17 +234,51 @@ export struct OssConsole {
     })
   }
 
+  private pickFile(): void {
+    const documentPicker = new picker.DocumentViewPicker()
+    const selectOptions = new picker.DocumentSelectOptions()
+    selectOptions.maxSelectNumber = 1
+    documentPicker.select(selectOptions).then((uris: Array<string>) => {
+      if (uris.length === 0) {
+        return
+      }
+      const uri = uris[0]
+      const name = fileNameOf(uri)
+      this.selectedUri = uri
+      this.selectedName = name
+      const prefix = this.prefix.length > 0 && !this.prefix.endsWith('/') ? this.prefix + '/' : this.prefix
+      this.objectKey = prefix + name
+    }).catch((error: BusinessError) => {
+      if (error.code === 1001) {
+        return
+      }
+      this.output = '选择文件失败\n' + error.code + ' ' + error.message
+    })
+  }
+
   private putObject(): void {
     const name = this.bucketName
     const key = this.objectKey
-    const body = this.bodyText
+    const bodyText = this.bodyText
+    const fileUri = this.selectedUri
+    const showProgress = this.showProgress
+    this.uploadPercent = 0
     this.run(async (): Promise<string> => {
-      const result = await this.client().send(new PutObject({
-        bucket: name,
-        key: key,
-        body: body,
-        contentType: 'text/plain',
-      }))
+      const command = fileUri.length > 0
+        ? new PutObject({ bucket: name, key: key, body: await readLocalFile(fileUri) })
+        : new PutObject({ bucket: name, key: key, body: bodyText, contentType: 'text/plain' })
+      const handler: ProgressHandler = (_increment: number, transferred: number, total: number): void => {
+        if (total > 0) {
+          const percent = Math.round((transferred * 100) / total)
+          this.uploadPercent = percent > 100 ? 100 : percent
+        }
+      }
+      const result = showProgress
+        ? await this.client().send(new PutObjectUpload(command, handler))
+        : await this.client().send(command)
+      if (showProgress) {
+        this.uploadPercent = 100
+      }
       return 'uploaded ' + key + '\netag: ' + result.etag + '\nrequestId: ' + result.requestId
     })
   }
