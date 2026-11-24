@@ -52,6 +52,15 @@ export default defineConfig({
         },
       },
       {
+        test: {
+          name: 'mock',
+          include: ['tests/mock/**/*.test.ts'],
+          environment: 'node',
+          alias: { '@ohos.net.http': fileURLToPath(new URL('tests/fixtures/ohos-net-http.ts', import.meta.url)) },
+          env: { TZ: 'Asia/Shanghai' },
+        },
+      },
+      {
         plugins: [slowEndpoint(), browserPlatformVariants()],
         // A local run needs `npx playwright install chromium`; CI provides the binary.
         test: {
