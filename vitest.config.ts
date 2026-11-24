@@ -55,9 +55,28 @@ export default defineConfig({
         test: {
           name: 'mock',
           include: ['tests/mock/**/*.test.ts'],
+          // Files named for the browser engine belong to the project below, which cannot run them here.
+          exclude: ['tests/mock/**/*.browser.test.ts'],
           environment: 'node',
           alias: { '@ohos.net.http': fileURLToPath(new URL('tests/fixtures/ohos-net-http.ts', import.meta.url)) },
           env: { TZ: 'Asia/Shanghai' },
+          // Each file owns a local server, so the files run one after another.
+          fileParallelism: false,
+        },
+      },
+      {
+        plugins: [browserPlatformVariants()],
+        test: {
+          // `*.browser.test.ts` runs inside chromium, so it can only reach a server the node side started.
+          name: 'mock-browser',
+          include: ['tests/mock/**/*.browser.test.ts'],
+          fileParallelism: false,
+          browser: {
+            enabled: true,
+            provider: playwright(),
+            headless: true,
+            instances: [{ browser: 'chromium' }],
+          },
         },
       },
       {
