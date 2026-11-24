@@ -1,16 +1,16 @@
 import { describe, expect, it } from 'vitest'
-import { Client } from '../../src/client.js'
-import { StaticCredentialsProvider } from '../../src/credentials/static.js'
-import { OperationError, OssError, RequestError, ServiceError } from '../../src/error/types.js'
-import { FixedDelayBackoff } from '../../src/retry/backoff.js'
-import { StandardRetryer } from '../../src/retry/standard.js'
+import { Client } from '../../../../src/client.js'
+import { StaticCredentialsProvider } from '../../../../src/credentials/static.js'
+import { OperationError, OssError, RequestError, ServiceError } from '../../../../src/error/types.js'
+import { FixedDelayBackoff } from '../../../../src/retry/backoff.js'
+import { StandardRetryer } from '../../../../src/retry/standard.js'
 import {
   createHarmonyTransport,
   type HarmonyHttpModule,
   type HarmonyRequestOptions,
   type HttpResponse,
-} from '../../src/runtime/harmony/http.js'
-import type { OperationInput, OperationOutput } from '../../src/types.js'
+} from '../../../../src/runtime/harmony/http.js'
+import type { OperationInput, OperationOutput } from '../../../../src/types.js'
 
 /** netstack codes the Harmony transport marks retryable. `2300028` is the transfer timeout. */
 const RETRYABLE_NETSTACK_CODES = [
@@ -85,7 +85,7 @@ function send(client: Client): Promise<OperationOutput> {
   return client.invokeOperation(GET_OBJECT)
 }
 
-describe('Harmony netstack mock', () => {
+describe('Harmony client pipeline with an injected http module', () => {
   it('passes connectTimeout through to @ohos.net.http', async () => {
     const http = fakeHttp(() => ok())
     const output = await send(clientFor(http, 2500))
