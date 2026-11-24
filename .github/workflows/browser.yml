@@ -23,3 +23,5 @@ jobs:
       - run: npm run size
       - run: npx playwright install --with-deps chromium
       - run: npm run test:browser
+      # The mock-browser project has no cases yet; the stub server needs preflight and exposed headers.
+      - run: npm run test:mock:browser

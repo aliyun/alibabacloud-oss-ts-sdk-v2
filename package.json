@@ -81,6 +81,7 @@
     "test:harmony": "node scripts/run-harmony-test.mjs",
     "test:ohpm-mock": "node scripts/run-harmony-test.mjs",
     "test:mock": "vitest run --project mock",
+    "test:mock:browser": "vitest run --project mock-browser --passWithNoTests",
     "size": "node scripts/size-gate.mjs",
     "check": "npm run lint && npm run typecheck && npm run typecheck:core && npm run typecheck:harmony && npm run test"
   },
