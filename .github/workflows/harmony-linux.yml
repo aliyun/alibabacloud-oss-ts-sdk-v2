@@ -1,4 +1,4 @@
-name: Harmony Build
+name: Harmony (linux)
 
 on:
   push:
@@ -11,6 +11,7 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  # The default ubuntu image has no HarmonyOS toolchain, so a container image supplies hvigor and the SDK.
   harmony-build:
     runs-on: ubuntu-latest
     container: ghcr.io/sanchuanhehe/harmony-next-pipeline-docker/harmonyos-ci-image:v5.0.4
