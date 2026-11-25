@@ -2,45 +2,53 @@ import { spawn, spawnSync } from 'node:child_process'
 import { readFileSync, rmSync, writeFileSync } from 'node:fs'
 import { createInterface } from 'node:readline'
 
-/** The stub reports the port it bound on its first line; port 0 lets the OS pick a free one. */
+/** The stub reports the ports it resolved on its first two lines; port 0 lets the OS pick a free one. */
 const LISTENING = /listening on http:\/\/127\.0\.0\.1:(\d+)/
-const STUB_PORT_FILE = 'ohos-har/oss-v2/src/test/mock/stub-port.ets'
+const DEAD = /dead port (\d+)/
+const STUB_PORTS_FILE = 'ohos-har/oss-v2/src/test/mock/stub-ports.ets'
 
 /**
- * Hands the bound port to the ArkTS suite, which can only read a compiled constant, and restores the
+ * Hands the resolved ports to the ArkTS suite, which can only read a compiled constant, and restores the
  * committed file afterwards so a run never leaves the working tree modified.
- * @param {string} port
+ * @param {{stub: string, dead: string}} ports
  * @returns {() => void}
  */
-function useStubPort(port) {
-  const original = readFileSync(STUB_PORT_FILE, 'utf8')
-  writeFileSync(STUB_PORT_FILE, original.replace(/export const STUB_PORT: string = '[^']*'/, `export const STUB_PORT: string = '${port}'`))
-  return () => writeFileSync(STUB_PORT_FILE, original)
+function useStubPorts(ports) {
+  const original = readFileSync(STUB_PORTS_FILE, 'utf8')
+  /**
+   * @param {string} text
+   * @param {string} name
+   * @param {string} value
+   * @returns {string}
+   */
+  const rewrite = (text, name, value) =>
+    text.replace(new RegExp(`export const ${name}: string = '[^']*'`), `export const ${name}: string = '${value}'`)
+  writeFileSync(STUB_PORTS_FILE, rewrite(rewrite(original, 'STUB_PORT', ports.stub), 'DEAD_PORT', ports.dead))
+  return () => writeFileSync(STUB_PORTS_FILE, original)
 }
 
 /**
- * Forwards the stub log into the test output and resolves with the port the stub bound.
+ * Forwards the stub log into the test output and resolves with the ports the stub bound.
  * @param {import('node:child_process').ChildProcessByStdio<null, import('node:stream').Readable, null>} stub
- * @returns {Promise<string>}
+ * @returns {Promise<{stub: string, dead: string}>}
  */
-function readStubPort(stub) {
+function readPorts(stub) {
   return new Promise((resolve, reject) => {
-    const lines = createInterface({ input: stub.stdout })
-    let settled = false
+    /** @type {Record<string, string>} */
+    const found = {}
     const timer = setTimeout(() => {
-      if (!settled) reject(new Error('the loopback stub did not report a port within 10 seconds'))
+      reject(new Error('the loopback stub did not report its ports within 10 seconds'))
     }, 10000)
-    lines.on('line', (line) => {
+    createInterface({ input: stub.stdout }).on('line', (line) => {
       console.log(line)
-      const found = LISTENING.exec(line)
-      if (!settled && found !== null) {
-        settled = true
+      const listening = LISTENING.exec(line)
+      if (listening !== null) found.stub = listening[1]
+      const dead = DEAD.exec(line)
+      if (dead !== null) found.dead = dead[1]
+      if (found.stub !== undefined && found.dead !== undefined) {
         clearTimeout(timer)
-        resolve(found[1])
+        resolve({ stub: found.stub, dead: found.dead })
       }
-    })
-    lines.on('close', () => {
-      if (!settled) reject(new Error('the loopback stub exited before reporting a port'))
     })
   })
 }
@@ -53,7 +61,7 @@ const stub = spawn('node', ['scripts/harmony-loopback-server.mjs', '0'], { stdio
 let restore = () => {}
 let status = 1
 try {
-  restore = useStubPort(await readStubPort(stub))
+  restore = useStubPorts(await readPorts(stub))
   const test = spawnSync(
     'hvigorw',
     ['test', '-p', 'module=oss_v2', '-p', 'coverage=false', '--no-daemon'],

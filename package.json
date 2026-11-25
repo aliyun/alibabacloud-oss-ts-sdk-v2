@@ -79,7 +79,6 @@
     "stage:har": "npm run build && node scripts/stage-har.mjs",
     "build:har": "npm run stage:har && node scripts/build-har.mjs",
     "test:harmony": "node scripts/run-harmony-test.mjs",
-    "test:ohpm-mock": "node scripts/run-harmony-test.mjs",
     "test:mock": "vitest run --project mock",
     "test:mock:browser": "vitest run --project mock-browser --passWithNoTests",
     "size": "node scripts/size-gate.mjs",
