@@ -10,6 +10,7 @@ import {
   PutBucket,
   StaticCredentialsProvider,
 } from '../../../src/index.js'
+import type { HttpTransport } from '../../../src/index.js'
 import { createNodeTransport } from '../../../src/runtime/node/index.js'
 
 const NAMES = ['OSS_TEST_ENDPOINT', 'OSS_TEST_REGION', 'OSS_TEST_ACCESS_KEY_ID', 'OSS_TEST_ACCESS_KEY_SECRET']
@@ -27,14 +28,14 @@ function valueOr(name: string, placeholder: string): string {
 
 export const live = NAMES.every((name) => value(name).length > 0)
 
-export function liveClient(credentials?: { id?: string; secret?: string }): Client {
+export function liveClient(options?: { id?: string; secret?: string; transport?: HttpTransport }): Client {
   return new Client({
     region: value('OSS_TEST_REGION'),
     endpoint: value('OSS_TEST_ENDPOINT'),
-    transport: createNodeTransport(),
+    transport: options?.transport ?? createNodeTransport(),
     credentialsProvider: new StaticCredentialsProvider(
-      credentials?.id ?? valueOr('OSS_TEST_ACCESS_KEY_ID', 'unset-suite-is-skipped'),
-      credentials?.secret ?? valueOr('OSS_TEST_ACCESS_KEY_SECRET', 'unset-suite-is-skipped'),
+      options?.id ?? valueOr('OSS_TEST_ACCESS_KEY_ID', 'unset-suite-is-skipped'),
+      options?.secret ?? valueOr('OSS_TEST_ACCESS_KEY_SECRET', 'unset-suite-is-skipped'),
     ),
   })
 }

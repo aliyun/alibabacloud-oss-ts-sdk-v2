@@ -79,6 +79,7 @@ const SURFACE = [
   'StreamConsumedError',
   'StreamContent',
   'StringContent',
+  'TransportCapabilityType',
   'UploadPart',
   'UploadPartCopy',
   'UrlStyleType',
@@ -177,6 +178,10 @@ describe('public surface', () => {
 
   it('exports the feature-flag bits a ClientOptionsFn may change', () => {
     expect(sdk.FeatureFlagsType.AUTO_DETECT_MIME_TYPE).toBe(1)
+  })
+
+  it('exports the transport capability a platform transport may report', () => {
+    expect(sdk.TransportCapabilityType.FILLS_CONTENT_TYPE).toBe('fillsContentType')
   })
 
   it('exports the error classes a caller branches on', () => {

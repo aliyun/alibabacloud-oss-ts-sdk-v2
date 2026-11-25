@@ -2,8 +2,9 @@ import { describe, expect, it } from 'vitest'
 import type { Config } from '../../../src/config.js'
 import { StaticCredentialsProvider } from '../../../src/credentials/static.js'
 import { ClientImpl } from '../../../src/internal/client-impl.js'
-import { FeatureFlagsType, UrlStyleType } from '../../../src/types.js'
-import { createMockTransport } from '../../fixtures/mock-transport.js'
+import { TransportCapabilityType } from '../../../src/transport/types.js'
+import { FeatureFlagsType, UrlStyleType, type OperationInput } from '../../../src/types.js'
+import { createMockTransport, type MockTransport } from '../../fixtures/mock-transport.js'
 
 function config(overrides?: Partial<Config>): Config {
   return {
@@ -12,6 +13,11 @@ function config(overrides?: Partial<Config>): Config {
     transport: createMockTransport(),
     ...overrides,
   }
+}
+
+/** A recording transport that reports it fills a missing content type itself. */
+function fillingTransport(): MockTransport {
+  return Object.assign(createMockTransport(), { capabilities: [TransportCapabilityType.FILLS_CONTENT_TYPE] })
 }
 
 describe('ClientImpl', () => {
@@ -71,6 +77,66 @@ describe('ClientImpl', () => {
       const impl = new ClientImpl(ip, [(options) => void (options.urlStyle = UrlStyleType.CNAME)])
       expect(impl.options.urlStyle).toBe(UrlStyleType.CNAME)
       expect(impl.innerOptions.urlStyle).toBe(UrlStyleType.PATH)
+    })
+  })
+
+  describe('fillContentType', () => {
+    const put: OperationInput = { opName: 'PutObject', method: 'PUT', bucket: 'bucket', key: 'hello.txt' }
+
+    it('settles an empty content type for a transport that reports filling one', async () => {
+      const transport = fillingTransport()
+      await new ClientImpl(config({ transport }), []).invokeOperation(put)
+
+      expect(transport.requests[0].headers.get('content-type')).toBe('')
+    })
+
+    it('leaves the request alone for a transport that reports nothing', async () => {
+      const transport = createMockTransport()
+      await new ClientImpl(config({ transport }), []).invokeOperation(put)
+
+      expect(transport.requests[0].headers.get('content-type')).toBeUndefined()
+    })
+
+    it('settles the content type whatever the method', async () => {
+      const transport = fillingTransport()
+      await new ClientImpl(config({ transport }), []).invokeOperation({ ...put, method: 'GET' })
+
+      expect(transport.requests[0].headers.get('content-type')).toBe('')
+    })
+
+    it('keeps a content type the input already carries', async () => {
+      const transport = fillingTransport()
+      await new ClientImpl(config({ transport }), []).invokeOperation({ ...put, headers: { 'Content-Type': 'text/plain' } })
+
+      expect(transport.requests[0].headers.get('content-type')).toBe('text/plain')
+    })
+
+    // A header the transport adds after signing is a header the service cannot match, so the
+    // difference below has to reach the signature, not only the wire.
+    it('signs the empty content type instead of adding it afterwards', async () => {
+      const headers = { 'x-oss-date': 'Thu, 01 Jan 2026 00:00:00 GMT' }
+      const filling = fillingTransport()
+      const plain = createMockTransport()
+      await new ClientImpl(config({ transport: filling }), []).invokeOperation({ ...put, headers })
+      await new ClientImpl(config({ transport: plain }), []).invokeOperation({ ...put, headers })
+
+      expect(filling.requests[0].headers.get('authorization')).not.toBe(plain.requests[0].headers.get('authorization'))
+    })
+
+    // Someone else sends a presigned url, and cannot be relied on to reproduce a header nobody asked for.
+    it('keeps the content type out of a url the caller did not give one', async () => {
+      const headers = { 'x-oss-date': 'Thu, 01 Jan 2026 00:00:00 GMT' }
+      const filling = await new ClientImpl(config({ transport: fillingTransport() }), []).presignOperation({
+        ...put,
+        headers,
+      })
+      const plain = await new ClientImpl(config({ transport: createMockTransport() }), []).presignOperation({
+        ...put,
+        headers,
+      })
+
+      expect(filling.signedHeaders).not.toHaveProperty('Content-Type')
+      expect(filling.url).toBe(plain.url)
     })
   })
 })

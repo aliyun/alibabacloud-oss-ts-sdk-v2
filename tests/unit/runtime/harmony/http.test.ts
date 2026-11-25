@@ -8,6 +8,7 @@ import {
 } from '../../../../src/runtime/harmony/http.js'
 import type { AbortSignalLike } from '../../../../src/utils/abort.js'
 import type { ByteContent, RequestMessage, StreamLike } from '../../../../src/transport/types.js'
+import { TransportCapabilityType } from '../../../../src/transport/types.js'
 import { bytesBody, stringBody, streamBody } from '../../../../src/transport/content.js'
 import { CanceledError, DeserializationError, RequestError, SerializationError } from '../../../../src/error/types.js'
 import { ClientErrorRetryable } from '../../../../src/retry/retryable.js'
@@ -318,31 +319,24 @@ describe('createHarmonyTransport', () => {
     expect(fake.calls[0].options.maxLimit).toBe(100 * 1024 * 1024)
   })
 
-  // netstack defaults content-type to application/json on these three methods, which is not what was signed.
-  it('sends an empty content-type on PUT, POST and DELETE that carry none', async () => {
-    for (const method of ['PUT', 'POST', 'DELETE']) {
+  // netstack defaults content-type to application/json, so the client settles it before signing; the transport forwards it.
+  it('hands netstack the content-type the client signed, in the casing it was given', async () => {
+    for (const name of ['Content-Type', 'content-type']) {
+      const fake = fakeModule(replyWith(''))
+      const req = request({ method: 'PUT', headers: createHeaderFields({ [name]: 'text/plain', 'x-oss-meta-a': '1' }) })
+      await createHarmonyTransport({ http: fake }).send(req, {})
+
+      expect(fake.calls[0].options.header).toEqual({ [name]: 'text/plain', 'x-oss-meta-a': '1' })
+    }
+  })
+
+  it('adds no content-type of its own to a request that carries none', async () => {
+    for (const method of ['PUT', 'POST', 'DELETE', 'GET']) {
       const fake = fakeModule(replyWith(''))
       await createHarmonyTransport({ http: fake }).send(request({ method }), {})
 
-      expect(fake.calls[0].options.header['content-type']).toBe('')
+      expect(Object.keys(fake.calls[0].options.header).map((name) => name.toLowerCase())).not.toContain('content-type')
     }
-  })
-
-  // The caller's content type wins case-insensitively.
-  it('leaves an explicit content-type alone, whatever its casing', async () => {
-    for (const name of ['Content-Type', 'CONTENT-TYPE']) {
-      const fake = fakeModule(replyWith(''))
-      await createHarmonyTransport({ http: fake }).send(request({ method: 'PUT', headers: createHeaderFields({ [name]: 'text/plain' }) }), {})
-
-      expect(fake.calls[0].options.header).toEqual({ [name]: 'text/plain' })
-    }
-  })
-
-  it('sends no content-type on a GET, which netstack does not default', async () => {
-    const fake = fakeModule(replyWith(''))
-    await createHarmonyTransport({ http: fake }).send(request(), {})
-
-    expect(fake.calls[0].options.header).toEqual({ 'x-oss-meta-a': '1' })
   })
 
   it('does not mutate the request headers', async () => {
@@ -563,5 +557,12 @@ describe('createHarmonyTransport platform', () => {
 
   it('cannot stream the request body: netstack takes it whole', () => {
     expect(createHarmonyTransport({ http: fakeModule(replyWith('')) }).canStreamUpload).toBe(false)
+  })
+
+  // netstack's own content-type default arrives after signing, so the client has to settle it first.
+  it('reports that it fills a missing content-type', () => {
+    expect(createHarmonyTransport({ http: fakeModule(replyWith('')) }).capabilities).toEqual([
+      TransportCapabilityType.FILLS_CONTENT_TYPE,
+    ])
   })
 })

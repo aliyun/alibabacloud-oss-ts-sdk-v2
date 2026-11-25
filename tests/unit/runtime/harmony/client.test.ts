@@ -81,11 +81,28 @@ const GET_OBJECT: OperationInput = {
   key: 'sample/hello.txt',
 }
 
+/** The request behind `CopyObject`: a put with no body and no content type of its own. */
+const COPY_OBJECT: OperationInput = {
+  opName: 'CopyObject',
+  method: 'PUT',
+  bucket: 'czlbucket',
+  key: 'sample/hello-copy.txt',
+  headers: { 'x-oss-copy-source': '/czlbucket/sample/hello.txt' },
+}
+
 function send(client: Client): Promise<OperationOutput> {
   return client.invokeOperation(GET_OBJECT)
 }
 
 describe('Harmony client pipeline with an injected http module', () => {
+  // netstack defaults the header after signing, which leaves the service unable to match it.
+  it('carries the signed empty content type to netstack on a put', async () => {
+    const http = fakeHttp(() => ok())
+    await clientFor(http).invokeOperation(COPY_OBJECT)
+
+    expect(http.calls[0].options.header['Content-Type']).toBe('')
+  })
+
   it('passes connectTimeout through to @ohos.net.http', async () => {
     const http = fakeHttp(() => ok())
     const output = await send(clientFor(http, 2500))
