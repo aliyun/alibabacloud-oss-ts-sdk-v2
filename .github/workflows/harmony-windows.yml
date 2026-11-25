@@ -1,4 +1,4 @@
-name: Harmony test
+name: Harmony (windows)
 
 on:
   push:
