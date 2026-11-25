@@ -67,18 +67,11 @@ jobs:
             echo ::error::@ohos/hypium was not installed
             exit /b 1
           )
-      - name: Run ArkTS unit tests
+      # The loopback mock cases live in the same module and the same runner, which brings up the stub server
+      # the cases call and rewrites the result file, so one run covers both suites.
+      - name: Run ArkTS unit and mock tests
         run: npm run test:harmony
-      - name: Assert ArkTS unit test results
-        run: node scripts/check-harmony-result.mjs
-      # The mock cases go through the same module and the same runner script, which rewrites the result
-      # file; they stay off until the Previewer's netstack is shown to reach this runner's loopback,
-      # which is what a real stub server needs.
-      - name: Run ArkTS mock tests
-        if: false
-        run: npm run test:ohpm-mock
-      - name: Assert ArkTS mock test results
-        if: false
+      - name: Assert ArkTS test results
         run: node scripts/check-harmony-result.mjs
       - name: Publish test log
         if: always()
@@ -95,5 +88,5 @@ jobs:
           name: harmony-test
           path: |
             ohos-har/oss-v2/.test/default/intermediates/test/coverage_data/test_result.txt
-            ohos-har/oss-v2/.test/default/outputs/test/reports/
+            ohos-har/oss-v2/.test/default/intermediates/test/coverage_data/coverage.log
           if-no-files-found: warn
