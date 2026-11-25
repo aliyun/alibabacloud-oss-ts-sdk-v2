@@ -145,6 +145,8 @@ interface InnerOptions {
   endpoint?: ParsedEndpoint
   /** `ClientOptions.urlStyle` with the IP-endpoint override applied. */
   urlStyle: UrlStyleType
+  /** Set when the transport adds a `Content-Type` of its own to a request that has none. */
+  fillContentType: boolean
   /** Learned from a RequestTimeTooSkewed correction and reused by later requests. */
   clockOffset: number
   stack: ExecuteStack
@@ -169,6 +171,7 @@ function resolveInnerOptions(config: Config, options: ClientOptions): InnerOptio
     userAgent: buildUserAgent(options.transport?.platform, config.userAgent),
     endpoint,
     urlStyle: ip ? UrlStyleType.PATH : options.urlStyle,
+    fillContentType: options.transport?.capabilities?.includes('fillsContentType') === true,
     clockOffset: 0,
     stack,
   }
@@ -251,6 +254,7 @@ export class ClientImpl {
     const endpoint = this.verifyOperation(input)
     const logger = this.options.logger
     const request = this.buildRequest(input, endpoint)
+    this.fillContentType(request)
     const context = this.buildContext(input, request, options, innerOptions)
 
     logger?.debug('invokeOperation ' + input.opName + ' ' + request.method + ' ' + request.url)
@@ -347,6 +351,12 @@ export class ClientImpl {
     if (parameters !== undefined && Object.keys(parameters).length > 0) url += '?' + buildQueryString(parameters)
 
     return { method: input.method, url, headers, body: toByteContent(input.body) }
+  }
+
+  /** Gives a request this client sends the `Content-Type` its transport would add after signing. */
+  private fillContentType(request: RequestMessage): void {
+    if (!this.innerOptions.fillContentType || request.headers.get('content-type') !== undefined) return
+    request.headers.set('Content-Type', '')
   }
 
   /** Completes an upload's serializer marker while the feature is enabled. */

@@ -114,6 +114,12 @@ export interface RequestOptions {
   responseStream?: boolean
 }
 
+/** A platform behaviour a transport reports so the client settles the request before signing. */
+export enum TransportCapabilityType {
+  /** The transport adds a `Content-Type` to a body-carrying request that has none. */
+  FILLS_CONTENT_TYPE = 'fillsContentType',
+}
+
 /** Sends a request on the platform's own HTTP stack. */
 export interface HttpTransport {
   /** Rejects retryable transport failures with `RequestError`; other errors are not retried. */
@@ -122,4 +128,6 @@ export interface HttpTransport {
   platform?: string
   /** Whether this transport sends request bodies incrementally. Absent counts as false. */
   canStreamUpload?: boolean
+  /** Names the `TransportCapabilityType` behaviours this platform reports. Other entries are ignored. */
+  capabilities?: readonly string[]
 }

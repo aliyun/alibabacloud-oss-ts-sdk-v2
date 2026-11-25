@@ -7,6 +7,7 @@ import type {
   ByteContent,
   RequestOptions,
 } from '../../transport/types.js'
+import { TransportCapabilityType } from '../../transport/types.js'
 import {
   CanceledError,
   DeserializationError,
@@ -174,22 +175,6 @@ function responseBytes(result: string | ArrayBuffer | object): Uint8Array {
   throw new DeserializationError('unexpected response body from @ohos.net.http: expected an ArrayBuffer or a string')
 }
 
-const CONTENT_TYPE = 'content-type'
-
-/** Copies request headers and supplies an empty content type for body-capable methods. */
-function requestHeaders(request: RequestMessage): Record<string, string> {
-  const headers = request.headers.toRecord()
-  let hasContentType = false
-  for (const name of Object.keys(headers)) {
-    if (name.toLowerCase() === CONTENT_TYPE) hasContentType = true
-  }
-  const method = request.method
-  if (!hasContentType && (method === 'POST' || method === 'PUT' || method === 'DELETE')) {
-    headers[CONTENT_TYPE] = ''
-  }
-  return headers
-}
-
 /** Parses a proxy host and port, ignoring schemes, credentials, and paths. */
 function parseProxy(proxyHost: string): HarmonyHttpProxy | undefined {
   let rest = proxyHost.trim()
@@ -228,6 +213,9 @@ function parseProxy(proxyHost: string): HarmonyHttpProxy | undefined {
  * 5. **`insecureSkipVerify` is ignored:** skipping certificate verification is compile-gated in
  *    netstack and not reachable from the JS API, so verification always runs.
  * 6. **`enabledRedirect` is ignored:** netstack follows redirects unconditionally and offers no toggle.
+ * 7. **netstack supplies a `Content-Type` of its own** on POST, PUT and DELETE when the request has
+ *    none, so the transport reports `TransportCapabilityType.FILLS_CONTENT_TYPE` and the client signs
+ *    an empty one on every request it sends. A url it presigns signs no content type of its own.
  */
 export function createHarmonyTransport(options?: HarmonyTransportOptions): HttpTransport {
   const http = options?.http ?? netstack
@@ -235,6 +223,7 @@ export function createHarmonyTransport(options?: HarmonyTransportOptions): HttpT
   const usingProxy = options?.proxyHost !== undefined ? parseProxy(options.proxyHost) : undefined
   return {
     canStreamUpload: false,
+    capabilities: [TransportCapabilityType.FILLS_CONTENT_TYPE],
     async send(request: RequestMessage, options: RequestOptions): Promise<ResponseMessage> {
       const signal = options.signal
       if (signal !== undefined && signal.aborted) throw new CanceledError()
@@ -265,7 +254,7 @@ export function createHarmonyTransport(options?: HarmonyTransportOptions): HttpT
 
       const requestOptions: HarmonyRequestOptions = {
         method: request.method,
-        header: requestHeaders(request),
+        header: request.headers.toRecord(),
         extraData: data,
         expectDataType: http.HttpDataType.ARRAY_BUFFER,
         maxLimit: MAX_RESPONSE_BYTES,

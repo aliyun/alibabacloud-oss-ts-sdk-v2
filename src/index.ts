@@ -23,6 +23,7 @@ export type {
 } from './types.js'
 
 // Platform contract, for callers supplying their own transport
+export { TransportCapabilityType } from './transport/types.js'
 export type {
   HeaderFields,
   HttpTransport,
