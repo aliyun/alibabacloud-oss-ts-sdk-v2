@@ -125,7 +125,7 @@ describe('UploadPart serialize', () => {
     expect(serialized.bucket).toBe('bucket-1')
     expect(serialized.key).toBe('dir/file.txt')
     expect(serialized.parameters).toEqual({ partNumber: '3', uploadId: 'upload-1' })
-    expect(headersOf(serialized)).toEqual({})
+    expect(headersOf(serialized)).toEqual({ 'Content-Type': 'application/octet-stream' })
     expect(serialized.body).toBe('part-data')
   })
 

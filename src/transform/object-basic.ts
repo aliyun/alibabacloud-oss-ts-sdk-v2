@@ -256,6 +256,7 @@ export function serializeDeleteObject(request: DeleteObjectRequest): OperationIn
 
   const headers = createHeaderFields(request.headers)
   setHeaderString(headers, 'x-oss-request-payer', request.requestPayer)
+  setContentTypeIfAbsent(headers, 'application/xml')
   setDefaultContentMd5(headers)
 
   const parameters: Record<string, string> = {}

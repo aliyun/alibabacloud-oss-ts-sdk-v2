@@ -46,8 +46,8 @@ export interface HarmonyHttpProxy {
 export interface HttpResponse {
   responseCode: number
   header: RawHeaders
-  /** An `ArrayBuffer` when `expectDataType` is `ARRAY_BUFFER`. */
-  result: string | ArrayBuffer | object
+  /** An `ArrayBuffer` when `expectDataType` is `ARRAY_BUFFER`. An empty body arrives as `null` or `undefined`. */
+  result: string | ArrayBuffer | object | null | undefined
 }
 
 /** netstack's `DataSendProgressInfo`: both counts are cumulative totals, not per-chunk deltas. */
@@ -169,9 +169,12 @@ async function drain(body: ByteContent): Promise<ArrayBufferLike> {
   return concatBytes(chunks).buffer
 }
 
-function responseBytes(result: string | ArrayBuffer | object): Uint8Array {
+function responseBytes(result: string | ArrayBuffer | object | null | undefined): Uint8Array {
+  // netstack reports a response that carries no body as null or undefined.
+  if (result === undefined || result === null) return new Uint8Array(0)
   if (typeof result === 'string') return utf8Encode(result)
   if (result instanceof ArrayBuffer) return new Uint8Array(result)
+  if (ArrayBuffer.isView(result)) return new Uint8Array(result.buffer, result.byteOffset, result.byteLength)
   throw new DeserializationError('unexpected response body from @ohos.net.http: expected an ArrayBuffer or a string')
 }
 

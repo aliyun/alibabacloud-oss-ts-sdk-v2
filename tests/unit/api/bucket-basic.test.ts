@@ -508,7 +508,7 @@ describe('PutBucket deserialize', () => {
 })
 
 describe('DeleteBucket serialize', () => {
-  it('sends the empty-body MD5 and no other header of its own', async () => {
+  it('sends the empty-body MD5 and a default content type', async () => {
     const command = new DeleteBucket({ bucket: 'bucket-1' })
     const serialized = await command.serialize(command.input)
 
@@ -516,7 +516,7 @@ describe('DeleteBucket serialize', () => {
     expect(serialized.method).toBe('DELETE')
     expect(serialized.bucket).toBe('bucket-1')
     expect(serialized.key).toBeUndefined()
-    expect(headersOf(serialized)).toEqual({ 'Content-MD5': EMPTY_BODY_MD5 })
+    expect(headersOf(serialized)).toEqual({ 'Content-Type': 'application/xml', 'Content-MD5': EMPTY_BODY_MD5 })
     expect(serialized.parameters).toEqual({})
     expect(serialized.body).toBeUndefined()
   })
@@ -536,14 +536,21 @@ describe('DeleteBucket serialize', () => {
 
     const serialized = await command.serialize(command.input)
 
-    expect(headersOf(serialized)).toEqual({ 'x-oss-request-payer': 'requester', 'Content-MD5': EMPTY_BODY_MD5 })
+    expect(headersOf(serialized)).toEqual({
+      'x-oss-request-payer': 'requester',
+      'Content-Type': 'application/xml',
+      'Content-MD5': EMPTY_BODY_MD5,
+    })
     expect(serialized.parameters).toEqual({ 'x-oss-not-modelled': 'kept' })
   })
 
   it('leaves a Content-MD5 the caller set by hand alone, whatever its case', async () => {
     const command = new DeleteBucket({ bucket: 'bucket-1', headers: { 'Content-Md5': 'XUFAKrxLKna5cZ2REBfFkg==' } })
     const serialized = await command.serialize(command.input)
-    expect(headersOf(serialized)).toEqual({ 'Content-Md5': 'XUFAKrxLKna5cZ2REBfFkg==' })
+    expect(headersOf(serialized)).toEqual({
+      'Content-Type': 'application/xml',
+      'Content-Md5': 'XUFAKrxLKna5cZ2REBfFkg==',
+    })
   })
 })
 
