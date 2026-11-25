@@ -41,8 +41,17 @@ command line, with the HarmonyOS command-line tools on `PATH` and `DEVECO_SDK_HO
 
 ## Limitations that shape these samples
 
+These are limits of `@ohos.net.http`, not of the operations themselves.
+
 - **Bodies are buffered.** A request body must be a string or `Uint8Array`, not a stream; a response
   is buffered and capped at 100 MiB, so `GetObject` on a large object needs a ranged request.
+- **`readWriteTimeoutMs` is not an idle timeout.** netstack's read timeout is a deadline for the whole
+  transfer, so this transport leaves it at 0. `connectTimeoutMs` is passed through. Cancel an in-flight
+  call with the signal from the cancellation sample.
+- **`insecureSkipVerify` has no effect.** Skipping certificate checks is not reachable from the JS API,
+  so verification always runs.
+- **`enabledRedirect` has no effect.** netstack follows redirects and offers no switch to turn that off.
+- **Only an unauthenticated HTTP proxy is used.** Schemes and credentials in `proxyHost` are ignored.
 - **No `AbortController`.** [entry/src/main/ets/scenario/Cancellation.ets](entry/src/main/ets/scenario/Cancellation.ets)
   implements the small signal the SDK needs by hand, which is the whole point of that sample here.
 
