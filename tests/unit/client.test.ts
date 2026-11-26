@@ -1,4 +1,5 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
+import { GetObject } from '../../src/api/object-basic.js'
 import { Client } from '../../src/client.js'
 import type { Config } from '../../src/config.js'
 import { AnonymousCredentialsProvider } from '../../src/credentials/anonymous.js'
@@ -7,6 +8,7 @@ import type { CredentialsProvider } from '../../src/credentials/types.js'
 import {
   CanceledError,
   CredentialsError,
+  NotSupportedError,
   OperationError,
   ParamInvalidError,
   ParamRequiredError,
@@ -14,6 +16,7 @@ import {
 } from '../../src/error/types.js'
 import type { Logger } from '../../src/log/logger.js'
 import { SignerV4 } from '../../src/signer/v4.js'
+import { toOneShotSinkFactory, TransportCapabilityType } from '../../src/transport/types.js'
 import { FeatureFlagsType } from '../../src/types.js'
 import type { OperationInput, OperationOutput, Presignable, UrlStyleType } from '../../src/types.js'
 import { addMimeType } from '../../src/utils/mime-type.js'
@@ -545,6 +548,52 @@ describe('invokeOperation', () => {
     const controllable = controllableSignal()
     await new Client(config({ transport })).invokeOperation(getObject(), { signal: controllable.signal })
     expect(transport.sendOptions[0].signal).toBe(controllable.signal)
+  })
+
+  // Losing the sink here would leave the caller with an empty file and a successful result. It reaches the
+  // transport the way a callback does -- through the command's inner options, not through the envelope.
+  it('carries the sink factory the request named down to the transport', async () => {
+    const transport = Object.assign(createMockTransport(), { capabilities: [TransportCapabilityType.SINK_FACTORY] })
+    const factory = toOneShotSinkFactory({ write: () => {} })
+    await new Client(config({ transport })).send(new GetObject({ bucket: 'bucket', key: 'dir/key.txt', sinkFactory: factory }))
+    expect(transport.sendOptions[0].sinkFactory).toBe(factory)
+  })
+
+  // Buffering a body a caller meant to stream is how a 5 GiB download runs out of memory, so a
+  // transport that cannot fill a sink is refused rather than quietly ignored.
+  it('refuses a sink factory for a transport that reports no such capability', async () => {
+    const transport = createMockTransport()
+    await expect(
+      new Client(config({ transport })).send(
+        new GetObject({ bucket: 'bucket', key: 'dir/key.txt', sinkFactory: toOneShotSinkFactory({ write: () => {} }) }),
+      ),
+    ).rejects.toBeInstanceOf(NotSupportedError)
+    expect(transport.requests.length).toBe(0)
+  })
+
+  // A capability list that merely names the transport's other quirk is not a sink.
+  it('refuses a sink for a transport that only fills a content-type', async () => {
+    const transport = Object.assign(createMockTransport(), {
+      capabilities: [TransportCapabilityType.FILLS_CONTENT_TYPE],
+    })
+    await expect(
+      new Client(config({ transport })).send(
+        new GetObject({ bucket: 'bucket', key: 'dir/key.txt', sinkFactory: toOneShotSinkFactory({ write: () => {} }) }),
+      ),
+    ).rejects.toThrow('sinkFactory with the current transport is not supported on this runtime')
+  })
+
+  // A client with no transport resolves no capability at all, so the sink is refused here too rather than
+  // letting the chain report the missing field to a caller whose request named something else.
+  it('refuses a sink factory for a client with no transport', async () => {
+    const client = new Client(config(), (options) => {
+      options.transport = undefined
+    })
+    await expect(
+      client.send(
+        new GetObject({ bucket: 'bucket', key: 'dir/key.txt', sinkFactory: toOneShotSinkFactory({ write: () => {} }) }),
+      ),
+    ).rejects.toBeInstanceOf(NotSupportedError)
   })
 
   it('sends nothing when the signal the caller supplied has already fired', async () => {

@@ -14,6 +14,40 @@ export interface StreamLike {
 /** A single-pass read cursor over a request or response body. */
 export type ByteSource = StreamLike
 
+/**
+ * A single-pass write cursor over one HTTP attempt's response body: the push-side mirror of `StreamLike`.
+ * Chunks arrive in order, one sink serves one attempt, and the caller that made the sink closes it.
+ */
+export interface ByteSink {
+  /** Takes the next run of bytes. The transport waits for a returned promise, so writes never overlap. */
+  write(chunk: Uint8Array): void | Promise<void>
+  /** Releases whatever the sink holds. Optional, and a no-op once the body is delivered. */
+  close?(): void | Promise<void>
+}
+
+/**
+ * Hands the transport one `ByteSink` per attempt, made from the length and headers the response declared.
+ * `oneShot` is the replay marker, the response-side twin of `ByteContent.oneShot`: `true` keeps the
+ * retryer from asking for another sink.
+ */
+export interface ByteSinkFactory {
+  /**
+   * Opens a sink for one attempt. `size` is the object size the response declared, or `-1` when it declared
+   * nothing parseable; `headers` are that response's, lower-cased as the transport reports them.
+   */
+  supplier(size: number, headers: Record<string, string>): ByteSink
+  /** `true` when the request must not be retried once this sink has taken bytes. */
+  readonly oneShot: boolean
+}
+
+/** Wraps a sink the caller already has, which makes the download one-shot: it cannot be written twice. */
+export function toOneShotSinkFactory(sink: ByteSink): ByteSinkFactory {
+  return {
+    supplier: (): ByteSink => sink,
+    oneShot: true,
+  }
+}
+
 /** A request body descriptor that can hand out a fresh cursor per attempt. */
 export interface ByteContent {
   /**
@@ -112,12 +146,20 @@ export interface RequestOptions {
    * that cannot stream ignores `true`.
    */
   responseStream?: boolean
+  /**
+   * Receives the body as it arrives instead of handing it back buffered, for a body the transport will
+   * stream. A transport that cannot fill one reports no `TransportCapabilityType.SINK_FACTORY`, and the
+   * client rejects the call rather than buffering it.
+   */
+  sinkFactory?: ByteSinkFactory
 }
 
-/** A platform behaviour a transport reports so the client settles the request before signing. */
+/** A platform behaviour the client must account for: either it settles the request before signing, or it makes a capability unavailable. */
 export enum TransportCapabilityType {
   /** The transport adds a `Content-Type` to a body-carrying request that has none. */
   FILLS_CONTENT_TYPE = 'fillsContentType',
+  /** The transport can hand a response body to a `ByteSink` while it arrives. */
+  SINK_FACTORY = 'sinkFactory',
 }
 
 /** Sends a request on the platform's own HTTP stack. */

@@ -8,7 +8,8 @@ import type { ExecuteMiddleware } from '../../../src/internal/execute-middleware
 import { FixedDelayBackoff } from '../../../src/retry/backoff.js'
 import { NopRetryer, StandardRetryer } from '../../../src/retry/standard.js'
 import type { BackoffDelayer } from '../../../src/retry/types.js'
-import type { RequestMessage, ResponseMessage } from '../../../src/transport/types.js'
+import type { ByteSinkFactory, RequestMessage, ResponseMessage } from '../../../src/transport/types.js'
+import { toOneShotSinkFactory } from '../../../src/transport/types.js'
 import { bytesBody, streamBody } from '../../../src/transport/content.js'
 import { controllableSignal } from '../../fixtures/abort-signal.js'
 import { executeContext } from '../../fixtures/execute-context.js'
@@ -152,6 +153,28 @@ describe('RetryerMiddleware', () => {
   it('retries a Uint8Array body, which is replayable', async () => {
     const { transport, head } = chain([serverError])
     await head.execute(request(bytesBody(new Uint8Array([1, 2, 3]))), executeContext()).catch(() => undefined)
+    expect(transport.requests.length).toBe(3)
+  })
+
+  // The same rule applies to the other half of the exchange.
+  it('does not retry when the response sink cannot be handed a second time', async () => {
+    const { transport, head } = chain([serverError])
+    const context = executeContext()
+    context.sinkFactory = toOneShotSinkFactory({ write: () => undefined })
+    await head.execute(request(), context).catch(() => undefined)
+    expect(transport.requests.length).toBe(1)
+  })
+
+  // A factory that makes a fresh sink per attempt is what a replayable download is built on.
+  it('retries when the factory can make another sink', async () => {
+    const { transport, head } = chain([serverError])
+    const context = executeContext()
+    const made: ByteSinkFactory = {
+      oneShot: false,
+      supplier: () => ({ write: () => undefined }),
+    }
+    context.sinkFactory = made
+    await head.execute(request(), context).catch(() => undefined)
     expect(transport.requests.length).toBe(3)
   })
 

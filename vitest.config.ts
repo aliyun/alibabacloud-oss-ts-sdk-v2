@@ -38,6 +38,15 @@ function browserPlatformVariants(): Plugin {
   }
 }
 
+// The device-only OpenHarmony modules, mapped to the in-repo stand-ins. Only the projects that run the
+// harmony runtime need them; the browser projects exclude `tests/unit/runtime/**`.
+function ohosAliases(): Record<string, string> {
+  return {
+    '@ohos.net.http': fileURLToPath(new URL('tests/fixtures/ohos-net-http.ts', import.meta.url)),
+    '@ohos.file.fs': fileURLToPath(new URL('tests/fixtures/ohos-file-fs.ts', import.meta.url)),
+  }
+}
+
 export default defineConfig({
   test: {
     projects: [
@@ -46,8 +55,7 @@ export default defineConfig({
           name: 'unit',
           include: ['tests/unit/**/*.test.ts'],
           environment: 'node',
-          // `@ohos.net.http` resolves only on a device.
-          alias: { '@ohos.net.http': fileURLToPath(new URL('tests/fixtures/ohos-net-http.ts', import.meta.url)) },
+          alias: ohosAliases(),
           env: { TZ: 'Asia/Shanghai' },
         },
       },
@@ -58,7 +66,7 @@ export default defineConfig({
           // Files named for the browser engine belong to the project below, which cannot run them here.
           exclude: ['tests/mock/**/*.browser.test.ts'],
           environment: 'node',
-          alias: { '@ohos.net.http': fileURLToPath(new URL('tests/fixtures/ohos-net-http.ts', import.meta.url)) },
+          alias: ohosAliases(),
           env: { TZ: 'Asia/Shanghai' },
           // Each file owns a local server, so the files run one after another.
           fileParallelism: false,

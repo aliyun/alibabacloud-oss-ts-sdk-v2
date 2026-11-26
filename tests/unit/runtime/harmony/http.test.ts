@@ -6,14 +6,21 @@ import {
   type HttpResponse,
   type HarmonyRequestOptions,
 } from '../../../../src/runtime/harmony/http.js'
+import type { RawHeaders } from '../../../../src/runtime/harmony/headers.js'
 import type { AbortSignalLike } from '../../../../src/utils/abort.js'
-import type { ByteContent, RequestMessage, StreamLike } from '../../../../src/transport/types.js'
-import { TransportCapabilityType } from '../../../../src/transport/types.js'
+import type { ByteContent, ByteSink, ByteSinkFactory, RequestMessage, StreamLike } from '../../../../src/transport/types.js'
+import { toOneShotSinkFactory, TransportCapabilityType } from '../../../../src/transport/types.js'
 import { bytesBody, stringBody, streamBody } from '../../../../src/transport/content.js'
-import { CanceledError, DeserializationError, RequestError, SerializationError } from '../../../../src/error/types.js'
+import {
+  CanceledError,
+  DeserializationError,
+  OssError,
+  RequestError,
+  SerializationError,
+} from '../../../../src/error/types.js'
 import { ClientErrorRetryable } from '../../../../src/retry/retryable.js'
 import { createHeaderFields } from '../../../../src/utils/header-fields.js'
-import { utf8Decode, utf8Encode } from '../../../../src/utils/bytes.js'
+import { concatBytes, utf8Decode, utf8Encode } from '../../../../src/utils/bytes.js'
 
 interface Call {
   url: string
@@ -54,11 +61,15 @@ function fakeModule(reply: (call: Call) => Promise<HttpResponse>): Fake {
             void reply(call).then(resolve, reject)
           })
         },
-        on(_type: 'dataSendProgress', callback: (info: DataSendProgressInfo) => void): void {
-          sendListener = callback
+        requestInStream(): Promise<number> {
+          return Promise.reject(new Error('the buffered path never streams'))
         },
-        off(_type: 'dataSendProgress'): void {
-          sendListener = undefined
+        // One handle carries all three events; the buffered path arms only the send progress.
+        on(type: string, callback: (arg: never) => void): void {
+          if (type === 'dataSendProgress') sendListener = callback as (info: DataSendProgressInfo) => void
+        },
+        off(type: string): void {
+          if (type === 'dataSendProgress') sendListener = undefined
         },
         destroy(): void {
           fake.destroyed += 1
@@ -74,6 +85,109 @@ function toArrayBuffer(bytes: Uint8Array): ArrayBuffer {
   const buffer = new ArrayBuffer(bytes.byteLength)
   new Uint8Array(buffer).set(bytes)
   return buffer
+}
+
+/** One streamed call: the test pushes the platform events through `emit*`, then settles the status. */
+interface StreamCall {
+  url: string
+  options: HarmonyRequestOptions
+  emitHeaders(header: RawHeaders): void
+  emitData(chunk: Uint8Array): void
+}
+
+interface StreamFake extends HarmonyHttpModule {
+  calls: StreamCall[]
+  created: number
+  destroyed: number
+}
+
+/**
+ * Stands in for netstack's streaming half. `requestInStream` settles only after the whole body has been
+ * pushed, and `headersReceive` carries no status, which is exactly what the sink path works around.
+ * `destroy()` ends the transfer, as on the device.
+ */
+function fakeStreamModule(reply: (call: StreamCall) => Promise<number>): StreamFake {
+  const fake: StreamFake = {
+    calls: [],
+    created: 0,
+    destroyed: 0,
+    HttpDataType: { ARRAY_BUFFER: 2 },
+    createHttp() {
+      fake.created += 1
+      let onDestroy: (() => void) | undefined
+      let headers: ((header: RawHeaders) => void) | undefined
+      let data: ((chunk: ArrayBuffer) => void) | undefined
+      return {
+        request(): Promise<HttpResponse> {
+          return Promise.reject(new Error('a sink is never served by the buffered path'))
+        },
+        requestInStream(url: string, options: HarmonyRequestOptions): Promise<number> {
+          const call: StreamCall = {
+            url,
+            options,
+            emitHeaders: (header) => headers?.(header),
+            emitData: (chunk) => data?.(toArrayBuffer(chunk)),
+          }
+          fake.calls.push(call)
+          return new Promise<number>((resolve, reject) => {
+            onDestroy = (): void => reject(new Error('request destroyed'))
+            reply(call).then(resolve, reject)
+          })
+        },
+        on(type: string, callback: (arg: never) => void): void {
+          if (type === 'headersReceive') headers = callback as (header: RawHeaders) => void
+          if (type === 'dataReceive') data = callback as (chunk: ArrayBuffer) => void
+        },
+        off(type: string): void {
+          if (type === 'headersReceive') headers = undefined
+          if (type === 'dataReceive') data = undefined
+        },
+        destroy(): void {
+          fake.destroyed += 1
+          if (onDestroy !== undefined) onDestroy()
+        },
+      }
+    },
+  }
+  return fake
+}
+
+interface Collected {
+  sink: ByteSink
+  /** The factory form of the same thing, which is what a transport is handed. */
+  factory: ByteSinkFactory
+  /** One entry per `write`, so a case can see how the body was split. */
+  writes: Uint8Array[]
+  text(): string
+}
+
+/** A `ByteSink` that keeps what it was given; refuses every write once `rejectAfterBytes` have landed. */
+function collectingSink(rejectAfterBytes?: number): Collected {
+  const writes: Uint8Array[] = []
+  let delivered = 0
+  const sink: ByteSink = {
+    write(chunk: Uint8Array): Promise<void> {
+      if (rejectAfterBytes !== undefined && delivered >= rejectAfterBytes) {
+        return Promise.reject(new Error('the disk is full'))
+      }
+      delivered += chunk.byteLength
+      writes.push(chunk)
+      return Promise.resolve()
+    },
+  }
+  return {
+    sink,
+    factory: toOneShotSinkFactory(sink),
+    writes,
+    text: () => utf8Decode(concatBytes(writes)),
+  }
+}
+
+/** Splits a body the way netstack hands one over. */
+function parts(body: string, each: number): string[] {
+  const out: string[] = []
+  for (let at = 0; at < body.length; at += each) out.push(body.slice(at, at + each))
+  return out
 }
 
 function replyWith(
@@ -558,6 +672,310 @@ describe('createHarmonyTransport responseStream', () => {
   })
 })
 
+describe('createHarmonyTransport sinkFactory', () => {
+  it('takes the body through the sink and hands back none', async () => {
+    const body = 'a'.repeat(64 * 1024) + 'tail'
+    const fake = fakeStreamModule((call) => {
+      call.emitHeaders({ 'x-oss-request-id': 'abc' })
+      for (const part of parts(body, 4096)) call.emitData(utf8Encode(part))
+      return Promise.resolve(200)
+    })
+    const taken = collectingSink()
+
+    const response = await createHarmonyTransport({ http: fake }).send(request(), {
+      sinkFactory: taken.factory,
+    })
+
+    expect(fake.calls.length).toBe(1)
+    expect(fake.calls[0].options.method).toBe('GET')
+    expect(fake.calls[0].options.header['x-oss-meta-a']).toBe('1')
+    expect(response.statusCode).toBe(200)
+    // `headersReceive` is the only header source in stream mode, and it arrives without a status.
+    expect(response.headers['x-oss-request-id']).toBe('abc')
+    expect(taken.text()).toBe(body)
+    // Those bytes are the caller's file now, not a body.
+    expect(await response.body?.bytes()).toEqual(new Uint8Array(0))
+    expect(fake.destroyed).toBe(1)
+  })
+
+  // A push reaches the sink as the bytes it arrived in: the transport keeps no buffer of its own, so the
+  // body is not copied on the way to a sink that copies for the platform's sake anyway.
+  it('writes each push as it arrives', async () => {
+    const body = 'b'.repeat(20 * 1024)
+    const fake = fakeStreamModule((call) => {
+      for (const part of parts(body, 1024)) call.emitData(utf8Encode(part))
+      return Promise.resolve(200)
+    })
+    const taken = collectingSink()
+
+    await createHarmonyTransport({ http: fake }).send(request(), { sinkFactory: taken.factory })
+
+    expect(taken.writes.length).toBe(20)
+    expect(taken.writes.every((write: Uint8Array): boolean => write.byteLength === 1024)).toBe(true)
+    expect(taken.text()).toBe(body)
+  })
+
+  // The mark is looked for after normalization, whatever case the platform's own map carried.
+  it('routes on a mark of any case', async () => {
+    const document = '<Error><Code>NoSuchKey</Code></Error>'
+    const fake = fakeStreamModule((call) => {
+      call.emitHeaders({ 'X-OSS-EC': '0003-00000101' })
+      call.emitData(utf8Encode(document))
+      return Promise.resolve(404)
+    })
+    const taken = collectingSink()
+
+    const response = await createHarmonyTransport({ http: fake }).send(request(), { sinkFactory: taken.factory })
+
+    expect(response.statusCode).toBe(404)
+    expect(taken.writes.length).toBe(0)
+    expect(await response.body?.text()).toBe(document)
+  })
+
+  it('keeps a marked error document out of the sink, to read back as the response body', async () => {
+    const document = '<Error><Code>NoSuchKey</Code><Message>not there</Message></Error>'
+    const fake = fakeStreamModule((call) => {
+      call.emitHeaders({ 'x-oss-request-id': 'req-1', 'x-oss-ec': '0003-00000101' })
+      call.emitData(utf8Encode(document))
+      return Promise.resolve(404)
+    })
+    const taken = collectingSink()
+
+    const response = await createHarmonyTransport({ http: fake }).send(request(), { sinkFactory: taken.factory })
+
+    expect(response.statusCode).toBe(404)
+    expect(taken.writes.length).toBe(0)
+    expect(await response.body?.text()).toBe(document)
+  })
+
+  // Without the marker the transport had no way to know, and by the time the status arrives the bytes
+  // belong to the sink: the caller gets the status and an error with no document to read.
+  it('gives an unmarked failure to the sink, and its status alone to the error', async () => {
+    const document = '<Error><Code>NoSuchKey</Code><Message>not there</Message></Error>'
+    const fake = fakeStreamModule((call) => {
+      call.emitHeaders({ 'x-oss-request-id': 'req-1' })
+      call.emitData(utf8Encode(document))
+      return Promise.resolve(404)
+    })
+    const taken = collectingSink()
+
+    const response = await createHarmonyTransport({ http: fake }).send(request(), { sinkFactory: taken.factory })
+
+    expect(response.statusCode).toBe(404)
+    expect(taken.text()).toBe(document)
+    expect(await response.body?.bytes()).toEqual(new Uint8Array(0))
+  })
+
+  // A marked response is a failure whatever its length, so all of it stays with the error.
+  it('keeps a marked failure of any size out of the sink', async () => {
+    const document = '<Error><Code>NoSuchKey</Code><Message>' + 'x'.repeat(64 * 1024) + '</Message></Error>'
+    const fake = fakeStreamModule((call) => {
+      call.emitHeaders({ 'x-oss-ec': '0003-00000101' })
+      for (const part of parts(document, 16 * 1024)) call.emitData(utf8Encode(part))
+      return Promise.resolve(500)
+    })
+    const taken = collectingSink()
+
+    const response = await createHarmonyTransport({ http: fake }).send(request(), { sinkFactory: taken.factory })
+
+    expect(response.statusCode).toBe(500)
+    expect(taken.writes.length).toBe(0)
+    expect(await response.body?.text()).toBe(document)
+  })
+
+  // The sink's own refusal is what the caller hears. Whether another attempt is worth making is the
+  // factory's decision, not the transport's, and a one-shot sink is how it says it is not.
+  it('reports a sink that refuses bytes, and leaves the retry decision to the factory', async () => {
+    const fake = fakeStreamModule((call) => {
+      call.emitData(utf8Encode('a'.repeat(64 * 1024)))
+      return Promise.resolve(200)
+    })
+    const taken = collectingSink(0)
+
+    const error = await createHarmonyTransport({ http: fake })
+      .send(request(), { sinkFactory: taken.factory })
+      .then(() => undefined)
+      .catch((err: unknown) => err as Error)
+
+    expect(error?.message).toContain('the disk is full')
+    expect(taken.factory.oneShot).toBe(true)
+    expect(new ClientErrorRetryable().isErrorRetryable(error!)).toBe(false)
+    expect(fake.destroyed).toBe(1)
+  })
+
+  // netstack cannot be slowed down, so a sink that stops taking bytes ends the transfer instead.
+  it('ends the transfer when the sink falls behind, and says why', async () => {
+    const fake = fakeStreamModule((call) => {
+      call.emitHeaders({})
+      for (let pushed = 0; pushed < 600; pushed++) call.emitData(new Uint8Array(16 * 1024))
+      return Promise.resolve(200)
+    })
+    const stalled: ByteSink = { write: () => new Promise<void>(() => undefined) }
+
+    const error = await createHarmonyTransport({ http: fake })
+      .send(request(), { sinkFactory: toOneShotSinkFactory(stalled) })
+      .then(() => undefined)
+      .catch((err: unknown) => err as Error)
+
+    expect(error).toBeInstanceOf(OssError)
+    expect(error?.message).toContain('fell behind')
+    expect(new ClientErrorRetryable().isErrorRetryable(error!)).toBe(false)
+    expect(fake.destroyed).toBe(1)
+  })
+
+  it('destroys a streamed request and reports CanceledError when the signal fires', async () => {
+    const fake = fakeStreamModule(() => new Promise<number>(() => undefined))
+    const controller = controllable()
+    const taken = collectingSink()
+
+    const promise = createHarmonyTransport({ http: fake }).send(request(), {
+      sinkFactory: taken.factory,
+      signal: controller.signal,
+    })
+    controller.abort()
+
+    await expect(promise).rejects.toBeInstanceOf(CanceledError)
+    expect(fake.destroyed).toBe(1)
+    expect(controller.listeners()).toBe(0)
+  })
+
+  // A transient netstack failure that reached no sink is still worth another attempt.
+  it('retries a failure that delivered nothing to the sink', async () => {
+    const fake = fakeStreamModule(() => Promise.reject(nativeError(2300007, 'Failed to connect')))
+    const taken = collectingSink()
+
+    const error = await createHarmonyTransport({ http: fake })
+      .send(request(), { sinkFactory: taken.factory })
+      .then(() => undefined)
+      .catch((err: unknown) => err as Error)
+
+    expect(error).toBeInstanceOf(RequestError)
+    expect(new ClientErrorRetryable().isErrorRetryable(error!)).toBe(true)
+    expect(taken.writes.length).toBe(0)
+  })
+
+  // The factory is what a sink is reached through, so this is the only way a caller learns the size upfront.
+  it('asks the factory once, with what the response declared, and gives the sink back', async () => {
+    const body = 'a'.repeat(64 * 1024) + 'tail'
+    const fake = fakeStreamModule((call) => {
+      // Given in platform case, handed to the factory lower-cased like every other reader of them.
+      call.emitHeaders({ 'Content-Length': String(body.length), 'X-OSS-Request-Id': 'req-2' })
+      for (const part of parts(body, 4096)) call.emitData(utf8Encode(part))
+      return Promise.resolve(200)
+    })
+    const sizes: number[] = []
+    const writes: Uint8Array[] = []
+    let closes = 0
+    let made = 0
+    const factory: ByteSinkFactory = {
+      oneShot: false,
+      supplier(size: number, headers: Record<string, string>): ByteSink {
+        made += 1
+        sizes.push(size)
+        expect(headers['x-oss-request-id']).toBe('req-2')
+        return {
+          write: (chunk: Uint8Array): void => {
+            writes.push(chunk)
+          },
+          close: (): void => {
+            closes += 1
+          },
+        }
+      },
+    }
+
+    await createHarmonyTransport({ http: fake }).send(request(), { sinkFactory: factory })
+
+    expect(made).toBe(1)
+    expect(sizes).toEqual([body.length])
+    expect(concatBytes(writes)).toEqual(utf8Encode(body))
+    expect(closes).toBe(1)
+  })
+
+  // A caller sizes its sink from this number, so a declaration that is absent or unreadable says so.
+  it('gives the factory -1 when the response declares no usable size', async () => {
+    const sizes: number[] = []
+    const factory: ByteSinkFactory = {
+      oneShot: false,
+      supplier(size: number): ByteSink {
+        sizes.push(size)
+        return { write: (): void => undefined }
+      },
+    }
+    const without = fakeStreamModule((call) => {
+      call.emitHeaders({ 'x-oss-request-id': 'req-2' })
+      call.emitData(utf8Encode('body'))
+      return Promise.resolve(200)
+    })
+    const unreadable = fakeStreamModule((call) => {
+      call.emitHeaders({ 'content-length': 'unknown' })
+      call.emitData(utf8Encode('body'))
+      return Promise.resolve(200)
+    })
+
+    await createHarmonyTransport({ http: without }).send(request(), { sinkFactory: factory })
+    await createHarmonyTransport({ http: unreadable }).send(request(), { sinkFactory: factory })
+
+    expect(sizes).toEqual([-1, -1])
+  })
+
+  // A sink is only asked for once a byte needs one, which is what keeps a marked failure off the path.
+  it('does not ask the factory for a marked failure', async () => {
+    const fake = fakeStreamModule((call) => {
+      call.emitHeaders({ 'x-oss-request-id': 'req-3', 'x-oss-ec': '0003-00000101' })
+      call.emitData(utf8Encode('<Error><Code>NoSuchKey</Code></Error>'))
+      return Promise.resolve(404)
+    })
+    let made = 0
+    const factory: ByteSinkFactory = {
+      oneShot: false,
+      supplier(): ByteSink {
+        made += 1
+        return collectingSink().sink
+      },
+    }
+
+    const response = await createHarmonyTransport({ http: fake }).send(request(), { sinkFactory: factory })
+
+    expect(response.statusCode).toBe(404)
+    expect(made).toBe(0)
+  })
+
+  // A replayable factory is only useful if the transport holds nothing between attempts.
+  it('asks a replayable factory again on the next attempt', async () => {
+    const fake = fakeStreamModule((call) => {
+      call.emitData(utf8Encode('attempt'))
+      return Promise.resolve(200)
+    })
+    const collected = [collectingSink(), collectingSink()]
+    let made = 0
+    const factory: ByteSinkFactory = {
+      oneShot: false,
+      supplier(): ByteSink {
+        const next = collected[made]
+        made += 1
+        return next.sink
+      },
+    }
+
+    await createHarmonyTransport({ http: fake }).send(request(), { sinkFactory: factory })
+    await createHarmonyTransport({ http: fake }).send(request(), { sinkFactory: factory })
+
+    expect(made).toBe(2)
+    expect(collected[0].text()).toBe('attempt')
+    expect(collected[1].text()).toBe('attempt')
+  })
+
+  it('leaves the buffered path alone when no sink is given', async () => {
+    const fake = fakeStreamModule(() => Promise.resolve(200))
+
+    await expect(createHarmonyTransport({ http: fake }).send(request(), {})).rejects.toThrow(
+      'a sink is never served by the buffered path',
+    )
+    expect(fake.calls.length).toBe(0)
+  })
+})
+
 describe('createHarmonyTransport platform', () => {
   it('omits it, since naming the device needs a second @ohos. module', () => {
     expect(createHarmonyTransport({ http: fakeModule(replyWith('')) }).platform).toBeUndefined()
@@ -568,9 +986,10 @@ describe('createHarmonyTransport platform', () => {
   })
 
   // netstack's own content-type default arrives after signing, so the client has to settle it first.
-  it('reports that it fills a missing content-type', () => {
+  it('reports that it fills a missing content-type and takes a sink factory', () => {
     expect(createHarmonyTransport({ http: fakeModule(replyWith('')) }).capabilities).toEqual([
       TransportCapabilityType.FILLS_CONTENT_TYPE,
+      TransportCapabilityType.SINK_FACTORY,
     ])
   })
 })

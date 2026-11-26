@@ -1,6 +1,6 @@
 import { DeserializationError } from '../error/types.js'
 import type { HeaderFields } from '../transport/types.js'
-import type { OperationInput, OperationOutput } from '../types.js'
+import type { OperationInnerOptions, OperationInput, OperationOutput } from '../types.js'
 import { toBase64 } from '../utils/base64.js'
 import { utf8Encode } from '../utils/bytes.js'
 import { md5 } from '../utils/md5.js'
@@ -193,6 +193,11 @@ export function serializeGetObject(request: GetObjectRequest): OperationInput {
     parameters,
     opMetadata: { 'response-stream': true },
   }
+}
+
+/** The one request field that is not sent: where the streamed body goes. */
+export function serializeInnerGetObject(request: GetObjectRequest): OperationInnerOptions {
+  return { sinkFactory: request.sinkFactory }
 }
 
 export function deserializeGetObject(output: OperationOutput): GetObjectResult {

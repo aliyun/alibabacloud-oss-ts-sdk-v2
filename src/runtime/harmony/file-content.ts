@@ -6,30 +6,42 @@ export interface HarmonyFile {
   fd: number
 }
 
-/** As much of a `@ohos.file.fs` `Stat` as `fileBody` reads. */
+/** As much of a `@ohos.file.fs` `Stat` as this package reads. */
 export interface HarmonyStat {
   size: number
 }
 
-/** The one `@ohos.file.fs` `OpenMode` member this module names. */
+/** The `@ohos.file.fs` `OpenMode` members this package names: read a file, and create or overwrite one. */
 export interface HarmonyOpenMode {
   readonly READ_ONLY: number
+  readonly WRITE_ONLY: number
+  readonly CREATE: number
+  readonly TRUNC: number
 }
 
-/** The positional `read` options this module passes: a file `offset` and a byte `length`. */
+/** The positional `read` options this package passes: a file `offset` and a byte `length`. */
 export interface HarmonyReadOptions {
   offset?: number
   length?: number
 }
 
+/** The one `write` option this package passes: a position in the file, as `read` takes. */
+export interface HarmonyWriteOptions {
+  offset?: number
+}
+
 /**
- * The subset of `@ohos.file.fs` this module uses. `read`'s `offset` is a position in the file,
- * not in the buffer.
+ * The subset of `@ohos.file.fs` this package uses, which is also what `types/ohos-file-fs.d.ts` declares the
+ * module to be. Every member is a named interface because `src/runtime/harmony` is compiled as ArkTS, which
+ * has no object literal types. `read`'s `offset` is a position in the file, not in the buffer; `write` takes
+ * an `ArrayBuffer` whole, not a view onto a larger one, and a write given an `offset` leaves the file pointer
+ * where it was.
  */
 export interface HarmonyFileFs {
   open(path: string, mode?: number): Promise<HarmonyFile>
   read(fd: number, buffer: ArrayBuffer, options?: HarmonyReadOptions): Promise<number>
-  close(file: number | HarmonyFile): Promise<void>
+  write(fd: number, buffer: ArrayBuffer, options?: HarmonyWriteOptions): Promise<number>
+  close(fd: number): Promise<void>
   stat(path: string): Promise<HarmonyStat>
   OpenMode: HarmonyOpenMode
 }
@@ -57,12 +69,12 @@ export class FileContent implements ByteContent {
     const path = this.path
     const end = this.offset + this.length
     let pos = this.offset
-    let file: HarmonyFile | undefined
+    let fd: number | undefined
 
     const closeIfOpen = async (): Promise<void> => {
-      if (file !== undefined) {
-        const handle = file
-        file = undefined
+      if (fd !== undefined) {
+        const handle = fd
+        fd = undefined
         await fileIo.close(handle)
       }
     }
@@ -73,10 +85,11 @@ export class FileContent implements ByteContent {
           await closeIfOpen()
           return null
         }
-        if (file === undefined) file = await fileIo.open(path, fileIo.OpenMode.READ_ONLY)
+        if (fd === undefined) fd = (await fileIo.open(path, fileIo.OpenMode.READ_ONLY)).fd
+        const handle = fd
         const want = Math.min(CHUNK_BYTES, end - pos)
         const buffer = new ArrayBuffer(want)
-        const read = await fileIo.read(file.fd, buffer, { offset: pos, length: want })
+        const read = await fileIo.read(handle, buffer, { offset: pos, length: want })
         if (read <= 0) {
           // Stop when the file ends before the declared range.
           await closeIfOpen()

@@ -54,6 +54,8 @@ export class RetryerMiddleware implements ExecuteMiddleware {
         lastError = error
         // One-shot bodies are not retried.
         if (request.body?.oneShot === true) throw error
+        // Nor is a response whose sink cannot be handed a second time.
+        if (context.sinkFactory?.oneShot === true) throw error
         if (!this.retryer.isErrorRetryable(error)) throw error
       }
     }

@@ -42,6 +42,9 @@ function fakeHttp(reply: (call: Call) => Promise<HttpResponse>): FakeHttp {
           fake.calls.push(call)
           return reply(call)
         },
+        requestInStream(): Promise<number> {
+          return Promise.reject(new Error('no response sink is used here'))
+        },
         on(): void {},
         off(): void {},
         destroy(): void {},

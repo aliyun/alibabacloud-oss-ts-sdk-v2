@@ -1,13 +1,13 @@
 import { describe, expect, it } from '@ohos/hypium'
 import netstack from '@ohos.net.http'
-import { GetObject, OperationError, PutObject, SerializationError, streamBody } from '../../../Index'
+import { GetObject, OperationError, PutObject, SerializationError, ServiceError, streamBody } from '../../../Index'
 import { SingleChunkStream } from '../unit/MockSupport'
-import { BUCKET, createClient, OBJECT_BODY, probeCount, STUB, STREAM_HALF, STREAM_LENGTH } from './Stubs'
+import { BUCKET, CollectingSinkFactory, createClient, OBJECT_BODY, probeCount, STUB, STREAM_HALF, STREAM_LENGTH } from './Stubs'
 
 /**
  * The cases the node mock suite runs against the real transport, here against `@ohos.net.http` in the
- * Previewer. Responses are buffered whole on this platform, so the streaming case asserts that the buffered
- * body survived intact rather than that it arrived in pieces.
+ * Previewer. Responses are buffered whole on this platform unless the caller hands over a sink factory, so
+ * the buffered case asserts that the body survived intact while the sink cases watch it arrive in pieces.
  */
 export default function transportTest() {
   describe('Harmony transport over loopback', () => {
@@ -91,6 +91,86 @@ export default function transportTest() {
         expect(error.contains((cause) => cause instanceof SerializationError) instanceof SerializationError).assertTrue()
       }
       expect(await probeCount('count', 'PUT', path)).assertEqual(0)
+    })
+
+    it('pushes a streamed body into the sink the factory made', 0, async () => {
+      const path = '/' + BUCKET + '/dir/sink.txt'
+      const factory = new CollectingSinkFactory()
+      const result = await createClient().send(
+        new GetObject({ bucket: BUCKET, key: 'dir/sink.txt', sinkFactory: factory }),
+      )
+      const held = (await result.body?.bytes())?.length ?? -1
+      const sink = factory.last()
+
+      expect(result.statusCode).assertEqual(200)
+      expect(result.etag ?? '').assertEqual('"etag-stream"')
+      // One sink for one attempt, made with what the response declared before any byte arrived.
+      expect(factory.made()).assertEqual(1)
+      expect(factory.sizes[0]).assertEqual(STREAM_LENGTH)
+      expect(sink.total()).assertEqual(STREAM_LENGTH)
+      expect(sink.charAt(0)).assertEqual('a')
+      expect(sink.charAt(STREAM_HALF - 1)).assertEqual('a')
+      expect(sink.charAt(STREAM_HALF)).assertEqual('b')
+      expect(sink.charAt(STREAM_LENGTH - 1)).assertEqual('b')
+      // Every byte went to the caller as it arrived, so the result holds nothing of its own.
+      expect(held).assertEqual(0)
+      expect(await probeCount('count', 'GET', path)).assertEqual(1)
+    })
+
+    // A response marks itself a failure in its headers, which is the only signal before the body, so the
+    // document stays with the error and never reaches the caller's file.
+    it('never builds a sink for a marked failure', 0, async () => {
+      const path = '/' + BUCKET + '/dir/sink-missing.txt'
+      const factory = new CollectingSinkFactory()
+      let error: Error | undefined
+      try {
+        await createClient().send(
+          new GetObject({ bucket: BUCKET, key: 'dir/sink-missing.txt', sinkFactory: factory }),
+        )
+      } catch (caught) {
+        error = caught as Error
+      }
+
+      expect(error instanceof OperationError).assertTrue()
+      if (error instanceof OperationError) {
+        const service = error.contains((cause) => cause instanceof ServiceError)
+        expect(service instanceof ServiceError).assertTrue()
+        if (service instanceof ServiceError) {
+          expect(service.code).assertEqual('NoSuchKey')
+          expect(service.statusCode).assertEqual(404)
+        }
+      }
+      // An error document belongs to the error, not to the file the caller asked for.
+      expect(factory.made()).assertEqual(0)
+      expect(await probeCount('count', 'GET', path)).assertEqual(1)
+    })
+
+    // Without a mark the transport had nothing to route on: the document lands in the sink, and the failure
+    // reaches the caller as its status alone.
+    it('streams a failure that carries no mark, and reports its status', 0, async () => {
+      const path = '/' + BUCKET + '/dir/sink-unmarked.txt'
+      const factory = new CollectingSinkFactory()
+      let error: Error | undefined
+      try {
+        await createClient().send(
+          new GetObject({ bucket: BUCKET, key: 'dir/sink-unmarked.txt', sinkFactory: factory }),
+        )
+      } catch (caught) {
+        error = caught as Error
+      }
+
+      expect(error instanceof OperationError).assertTrue()
+      if (error instanceof OperationError) {
+        const service = error.contains((cause) => cause instanceof ServiceError)
+        expect(service instanceof ServiceError).assertTrue()
+        if (service instanceof ServiceError) {
+          expect(service.statusCode).assertEqual(404)
+          expect(service.code).assertEqual('BadErrorResponse')
+        }
+      }
+      expect(factory.made()).assertEqual(1)
+      expect(factory.last().charAt(0)).assertEqual('<')
+      expect(await probeCount('count', 'GET', path)).assertEqual(1)
     })
   })
 }

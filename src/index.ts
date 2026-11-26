@@ -35,7 +35,10 @@ export type {
   StreamLike,
   ByteContent,
   ByteSource,
+  ByteSink,
+  ByteSinkFactory,
 } from './transport/types.js'
+export { toOneShotSinkFactory } from './transport/types.js'
 // Request-body descriptors and their factories, for building a body explicitly.
 export { BytesContent, StringContent, StreamContent, bytesBody, stringBody, streamBody } from './transport/content.js'
 export type { AbortSignalLike } from './utils/abort.js'

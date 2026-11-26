@@ -1,4 +1,4 @@
-import type { Command, OperationInput, OperationOutput, Presignable } from '../types.js'
+import type { Command, OperationInnerOptions, OperationInput, OperationOutput, Presignable } from '../types.js'
 import {
   deserializeAppendObject,
   deserializeCleanRestoredObject,
@@ -18,6 +18,7 @@ import {
   serializeGetObject,
   serializeGetObjectMeta,
   serializeHeadObject,
+  serializeInnerGetObject,
   serializePutObject,
   serializePutObjectPresign,
   serializeRestoreObject,
@@ -87,6 +88,11 @@ export class GetObject implements Presignable<GetObjectRequest, GetObjectResult>
 
   deserialize(output: OperationOutput): Promise<GetObjectResult> {
     return Promise.resolve(deserializeGetObject(output))
+  }
+
+  /** A download can name where its bytes go, which is a callback and not part of the request. */
+  serializeInner(input: GetObjectRequest): OperationInnerOptions {
+    return serializeInnerGetObject(input)
   }
 }
 
