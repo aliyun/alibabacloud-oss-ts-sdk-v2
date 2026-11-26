@@ -1,5 +1,4 @@
-import { GetObject } from '../api/object-basic.js'
-import { NotSupportedError } from '../error/types.js'
+import { GetObject, PutObject } from '../api/object-basic.js'
 import type {
   GetObjectRequest,
   GetObjectResult,
@@ -8,19 +7,23 @@ import type {
 } from '../models/object-basic.js'
 import type { Command, OperationOptions } from '../types.js'
 import { shallowClone } from '../utils/record.js'
+import { fileBody } from './harmony/file-content.js'
 import { FileSinkFactory } from './harmony/file-sink.js'
 
 interface ClientApi {
   send<I, O>(command: Command<I, O>, options?: OperationOptions): Promise<O>
 }
 
-export function putObjectFromFile(
-  _client: ClientApi,
-  _request: PutObjectRequest,
-  _path: string,
-  _options?: OperationOptions,
+/** Uploads a local file. The path is opened by `fileBody`; this function does not read it into one buffer. */
+export async function putObjectFromFile(
+  client: ClientApi,
+  request: PutObjectRequest,
+  path: string,
+  options?: OperationOptions,
 ): Promise<PutObjectResult> {
-  return Promise.reject(new NotSupportedError('putObjectFromFile'))
+  const next = shallowClone(request)
+  next.body = await fileBody(path)
+  return await client.send(new PutObject(next), options)
 }
 
 /**

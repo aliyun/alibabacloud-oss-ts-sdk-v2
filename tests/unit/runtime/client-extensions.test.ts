@@ -1,10 +1,21 @@
-import { beforeEach, describe, expect, it } from 'vitest'
-import { NotSupportedError } from '../../../src/error/types.js'
+import { beforeEach, describe, expect, it, vi } from 'vitest'
+import type { PutObjectRequest } from '../../../src/models/object-basic.js'
 import { getObjectToFile, putObjectFromFile } from '../../../src/runtime/client-extensions.harmony.js'
 import type { ByteSinkFactory } from '../../../src/transport/types.js'
 import type { OperationOptions } from '../../../src/types.js'
 import { fileBytes, fileText, openHandles, resetFiles } from '../../fixtures/ohos-file-fs.js'
 import { utf8Encode } from '../../../src/utils/bytes.js'
+
+vi.mock('../../../src/runtime/harmony/file-content.js', () => ({
+  fileBody: (path: string) =>
+    Promise.resolve({
+      path,
+      oneShot: false,
+      offset: 0,
+      length: 4,
+      source: () => ({ read: () => Promise.resolve(null) }),
+    }),
+}))
 
 type ClientApi = Parameters<typeof getObjectToFile>[0]
 
@@ -43,8 +54,19 @@ describe('OpenHarmony file operations', () => {
     resetFiles()
   })
 
-  it('uploads are still unsupported: netstack takes a request body whole', async () => {
-    await expect(putObjectFromFile({} as ClientApi, request, 'source.txt')).rejects.toBeInstanceOf(NotSupportedError)
+  it('uploads the file at the given path without the caller supplying its bytes', async () => {
+    let body: { path?: string } | undefined
+    const client = {
+      send: (command: { input: PutObjectRequest }): Promise<object> => {
+        const sent = command.input.body
+        body = sent !== undefined && typeof sent === 'object' && 'path' in sent ? sent : undefined
+        return Promise.resolve({})
+      },
+    } as Parameters<typeof putObjectFromFile>[0]
+
+    await putObjectFromFile(client, { bucket: 'bucket', key: 'key' }, 'source.txt')
+
+    expect(body?.path).toBe('source.txt')
   })
 
   it('streams a download into the file and returns no body', async () => {
