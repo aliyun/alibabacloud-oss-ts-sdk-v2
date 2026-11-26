@@ -2,7 +2,7 @@ import type { CredentialsProvider } from './credentials/types.js'
 import type { Logger } from './log/logger.js'
 import type { Retryer } from './retry/types.js'
 import type { Signer } from './signer/types.js'
-import type { HeaderFields, HttpTransport, RequestBody, ResponseBody } from './transport/types.js'
+import type { ByteSinkFactory, HeaderFields, HttpTransport, RequestBody, ResponseBody } from './transport/types.js'
 import type { AbortSignalLike } from './utils/abort.js'
 
 /** How the bucket is addressed. Any value that is not one of these is addressed as `VIRTUAL_HOSTED`. */
@@ -90,6 +90,11 @@ export interface OperationOptions {
 export interface OperationInnerOptions {
   progressHandler?: ProgressHandler
   responseHandlers?: ResponseHandler[]
+  /**
+   * Receives a streamed body as it arrives instead of buffering it. A failure the service marks as such
+   * leaves it alone; its `oneShot` settles whether a failed attempt is retried.
+   */
+  sinkFactory?: ByteSinkFactory
 }
 
 /** One API call, reified. `Client.send` is `serialize` -> `invokeOperation` -> `deserialize`. */

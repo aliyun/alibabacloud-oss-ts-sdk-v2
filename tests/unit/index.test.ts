@@ -88,6 +88,7 @@ const SURFACE = [
   'lookupMimeType',
   'streamBody',
   'stringBody',
+  'toOneShotSinkFactory',
 ]
 
 describe('public surface', () => {
@@ -180,8 +181,10 @@ describe('public surface', () => {
     expect(sdk.FeatureFlagsType.AUTO_DETECT_MIME_TYPE).toBe(1)
   })
 
-  it('exports the transport capability a platform transport may report', () => {
+  it('exports the transport capabilities a platform transport may report', () => {
     expect(sdk.TransportCapabilityType.FILLS_CONTENT_TYPE).toBe('fillsContentType')
+    expect(sdk.TransportCapabilityType.SINK_FACTORY).toBe('sinkFactory')
+    expect(typeof sdk.toOneShotSinkFactory).toBe('function')
   })
 
   it('exports the error classes a caller branches on', () => {

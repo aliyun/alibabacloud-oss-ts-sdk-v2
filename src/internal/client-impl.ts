@@ -2,7 +2,14 @@ import type { Config } from '../config.js'
 import { AnonymousCredentialsProvider } from '../credentials/anonymous.js'
 import { hasKeys } from '../credentials/types.js'
 import type { Credentials } from '../credentials/types.js'
-import { CredentialsError, OperationError, OssError, ParamInvalidError, ParamRequiredError } from '../error/types.js'
+import {
+  CredentialsError,
+  NotSupportedError,
+  OperationError,
+  OssError,
+  ParamInvalidError,
+  ParamRequiredError,
+} from '../error/types.js'
 import type { Logger } from '../log/logger.js'
 import { ResponseCheckerMiddleware } from './checker-middleware.js'
 import type { ExecuteContext } from './execute-context.js'
@@ -19,6 +26,7 @@ import type { Signer, SigningContext } from '../signer/types.js'
 import { SignerV1 } from '../signer/v1.js'
 import { SignerV4 } from '../signer/v4.js'
 import type { RequestMessage, HttpTransport } from '../transport/types.js'
+import { TransportCapabilityType } from '../transport/types.js'
 import { toByteContent } from '../transport/content.js'
 import { FeatureFlagsType, UrlStyleType } from '../types.js'
 import type {
@@ -147,6 +155,8 @@ interface InnerOptions {
   urlStyle: UrlStyleType
   /** Set when the transport adds a `Content-Type` of its own to a request that has none. */
   fillContentType: boolean
+  /** Set when the transport can hand a response body to a caller's sink as it arrives. */
+  supportsSink: boolean
   /** Learned from a RequestTimeTooSkewed correction and reused by later requests. */
   clockOffset: number
   stack: ExecuteStack
@@ -171,7 +181,8 @@ function resolveInnerOptions(config: Config, options: ClientOptions): InnerOptio
     userAgent: buildUserAgent(options.transport?.platform, config.userAgent),
     endpoint,
     urlStyle: ip ? UrlStyleType.PATH : options.urlStyle,
-    fillContentType: options.transport?.capabilities?.includes('fillsContentType') === true,
+    fillContentType: options.transport?.capabilities?.includes(TransportCapabilityType.FILLS_CONTENT_TYPE) === true,
+    supportsSink: options.transport?.capabilities?.includes(TransportCapabilityType.SINK_FACTORY) === true,
     clockOffset: 0,
     stack,
   }
@@ -408,6 +419,12 @@ export class ClientImpl {
         ? undefined
         : new ProgressObserver(progressHandler, resolveUploadTotal(request.body, request.headers))
 
+    // A sink the transport cannot fill is refused here rather than buffered behind the caller's back.
+    const sinkFactory = innerOptions?.sinkFactory
+    if (sinkFactory !== undefined && !this.innerOptions.supportsSink) {
+      throw new NotSupportedError('sinkFactory with the current transport')
+    }
+
     // Unset overrides use the retryer and transport defaults.
     return {
       retryMaxAttempts: options?.retryMaxAttempts,
@@ -417,6 +434,7 @@ export class ClientImpl {
       responseHandlers: innerOptions?.responseHandlers,
       signal: options?.signal,
       responseStream: toBoolean(input.opMetadata?.[RESPONSE_STREAM]),
+      sinkFactory,
     }
   }
 

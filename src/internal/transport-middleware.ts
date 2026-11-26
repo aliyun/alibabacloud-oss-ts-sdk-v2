@@ -23,6 +23,7 @@ export class TransportMiddleware implements ExecuteMiddleware {
       progressReporter: context.progressObserver?.feed,
       signal: context.signal,
       responseStream: context.responseStream,
+      sinkFactory: context.sinkFactory,
     })
   }
 }

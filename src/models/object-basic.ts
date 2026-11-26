@@ -1,4 +1,4 @@
-import type { RequestBody, ResponseBody } from '../transport/types.js'
+import type { ByteSinkFactory, RequestBody, ResponseBody } from '../transport/types.js'
 import type { RequestModel, ResultModel } from './common.js'
 
 /** The request for the PutObject operation. */
@@ -186,6 +186,11 @@ export interface GetObjectRequest extends RequestModel {
    * To indicate that the requester is aware that the request and data download will incur costs.
    */
   requestPayer?: string
+  /**
+   * Where the object goes as it arrives, instead of into a buffered body. The factory is asked for a sink
+   * once per attempt, and a runtime that cannot stream rejects the call with `NotSupportedError`.
+   */
+  sinkFactory?: ByteSinkFactory
 }
 
 /** The result for the GetObject operation. */

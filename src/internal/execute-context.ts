@@ -1,5 +1,6 @@
 import type { AbortSignalLike } from '../utils/abort.js'
 import type { SigningContext } from '../signer/types.js'
+import type { ByteSinkFactory } from '../transport/types.js'
 import type { ResponseHandler } from '../types.js'
 import type { ProgressObserver } from './progress.js'
 
@@ -20,4 +21,6 @@ export interface ExecuteContext {
   signal?: AbortSignalLike
   /** Resolved from the operation metadata `response-stream`; only `true` responses stream. */
   responseStream?: boolean
+  /** From `OperationInput`: hands the transport one sink per attempt for a body that streams. */
+  sinkFactory?: ByteSinkFactory
 }

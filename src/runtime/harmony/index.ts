@@ -3,5 +3,7 @@
 // `./node` and `./browser`, gathering the transport and the file body beside it.
 export { createHarmonyTransport } from './http.js'
 export { FileContent, fileBody } from './file-content.js'
+export { FileSinkFactory } from './file-sink.js'
 export type { HarmonyTransportOptions, HarmonyHttpModule } from './http.js'
 export type { HarmonyFileFs } from './file-content.js'
+export type { FileSinkOptions } from './file-sink.js'

@@ -1,5 +1,6 @@
 import netstack from '@ohos.net.http'
 import { Client, FixedDelayBackoff, StandardRetryer, StaticCredentialsProvider } from '../../../Index'
+import type { ByteSink, ByteSinkFactory } from '../../../Index'
 import { DEAD_PORT, STUB_PORT } from './stub-ports'
 
 /** Where `scripts/harmony-loopback-server.mjs` listens, and the port it reserved without binding. */
@@ -24,6 +25,65 @@ export function createClient(endpoint?: string): Client {
     credentialsProvider: new StaticCredentialsProvider('ak', 'sk'),
     retryer: new StandardRetryer({ maxAttempts: 3, backoff: new FixedDelayBackoff(0) }),
   })
+}
+
+/**
+ * A `ByteSink` that keeps what the transport handed over, so a case can see how many bytes arrived, in
+ * what order, and in how many writes -- how the body was split is netstack's, not the test's.
+ */
+export class CollectingSink implements ByteSink {
+  readonly chunks: Uint8Array[] = []
+  private bytes: number = 0
+
+  write(chunk: Uint8Array): void {
+    this.chunks.push(chunk)
+    this.bytes += chunk.length
+  }
+
+  total(): number {
+    return this.bytes
+  }
+
+  /** The character `at` bytes into what the sink took, or an empty string past the end. */
+  charAt(at: number): string {
+    let seen: number = 0
+    for (const chunk of this.chunks) {
+      if (at < seen + chunk.length) {
+        return String.fromCharCode(chunk[at - seen])
+      }
+      seen += chunk.length
+    }
+    return ''
+  }
+}
+
+/**
+ * The `ByteSinkFactory` a case hands the client: one collector per attempt, plus what each attempt was told
+ * about the body before it was asked for a sink. `oneShot` false is what lets a failed attempt be resent.
+ */
+export class CollectingSinkFactory implements ByteSinkFactory {
+  readonly oneShot: boolean = false
+  /** One entry per `supplier` call, in the order the attempts were made. */
+  readonly sinks: CollectingSink[] = []
+  /** What each response declared, or `-1` when it declared nothing. */
+  readonly sizes: number[] = []
+
+  supplier(size: number, _headers: Record<string, string>): ByteSink {
+    const sink = new CollectingSink()
+    this.sinks.push(sink)
+    this.sizes.push(size)
+    return sink
+  }
+
+  /** How many sinks were made, which is zero when the body never arrived. */
+  made(): number {
+    return this.sinks.length
+  }
+
+  /** The sink the last attempt was given. */
+  last(): CollectingSink {
+    return this.sinks[this.sinks.length - 1]
+  }
 }
 
 /**

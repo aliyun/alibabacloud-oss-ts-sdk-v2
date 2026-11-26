@@ -13,6 +13,7 @@ import {
 } from '../../../src/api/object-basic.js'
 import { DeserializationError, ParamRequiredError } from '../../../src/error/types.js'
 import type { ResponseBody } from '../../../src/transport/types.js'
+import { toOneShotSinkFactory } from '../../../src/transport/types.js'
 import type { OperationInput, OperationOutput } from '../../../src/types.js'
 import { SpyBody, textBody } from '../../fixtures/mock-transport.js'
 import { headersOf } from '../../fixtures/serialized-headers.js'
@@ -247,6 +248,27 @@ describe('GetObject serialize', () => {
       'response-content-type': 'text/plain',
       'response-expires': 'Fri, 30 Dec 2022 10:27:41 GMT',
     })
+  })
+
+  // Where the bytes go is a callback rather than part of the request, so it travels on the inner options
+  // and the envelope that gets signed and sent says nothing about it.
+  it('routes the sink factory to the inner options and keeps it off the envelope', async () => {
+    const factory = toOneShotSinkFactory({ write: () => undefined })
+    const command = new GetObject({ bucket: 'bucket-1', key: 'k', sinkFactory: factory })
+
+    expect(command.serializeInner?.(command.input)).toEqual({ sinkFactory: factory })
+
+    const serialized = await command.serialize(command.input)
+    expect(Object.keys(serialized)).not.toContain('sinkFactory')
+    expect(headersOf(serialized)).toEqual({})
+    expect(serialized.parameters).toEqual({})
+  })
+
+  // A download that names no sink is the ordinary case, and inner options are not part of it.
+  it('carries no sink factory for a plain download', () => {
+    const command = new GetObject({ bucket: 'bucket-1', key: 'k' })
+    const inner = command.serializeInner?.(command.input)
+    expect(inner?.sinkFactory).toBeUndefined()
   })
 
   it('rejects a missing key', () => {

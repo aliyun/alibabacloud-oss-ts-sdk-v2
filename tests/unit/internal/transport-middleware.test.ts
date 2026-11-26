@@ -3,6 +3,7 @@ import type { AbortSignalLike } from '../../../src/utils/abort.js'
 import { CanceledError, RequestError } from '../../../src/error/types.js'
 import { missingTransport, TransportMiddleware } from '../../../src/internal/transport-middleware.js'
 import type { RequestMessage } from '../../../src/transport/types.js'
+import { toOneShotSinkFactory } from '../../../src/transport/types.js'
 import { executeContext } from '../../fixtures/execute-context.js'
 import { createMockTransport } from '../../fixtures/mock-transport.js'
 import { createHeaderFields } from '../../../src/utils/header-fields.js'
@@ -88,6 +89,22 @@ describe('TransportMiddleware', () => {
     bufferedContext.responseStream = false
     await new TransportMiddleware(buffered).execute(request, bufferedContext)
     expect(buffered.sendOptions[0].responseStream).toBe(false)
+  })
+
+  // A sink is the only way a body leaves a transport that cannot buffer one, so it has to survive the hop.
+  it('forwards the sink factory', async () => {
+    const transport = createMockTransport()
+    const factory = toOneShotSinkFactory({ write: () => {} })
+    const context = executeContext()
+    context.sinkFactory = factory
+    await new TransportMiddleware(transport).execute(request, context)
+    expect(transport.sendOptions[0].sinkFactory).toBe(factory)
+  })
+
+  it('sends no sink factory when the context carries none', async () => {
+    const transport = createMockTransport()
+    await new TransportMiddleware(transport).execute(request, executeContext())
+    expect(transport.sendOptions[0].sinkFactory).toBeUndefined()
   })
 
   // Rejects rather than throwing synchronously: `execute` returns a Promise an outer middleware may `.catch`.

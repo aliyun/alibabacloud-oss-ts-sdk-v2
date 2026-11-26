@@ -83,6 +83,12 @@ function scenario(method, path, query, replies) {
 /** The headers every OSS response carries, overridable per reply. */
 const BASE_HEADERS = { 'x-oss-request-id': 'mock-request-id' }
 
+/**
+ * The extra header every OSS failure carries. The streaming transport reads it before the body does, which
+ * is the only way it learns a response is an error document rather than the object.
+ */
+const ERROR_HEADERS = { ...BASE_HEADERS, 'x-oss-ec': '0003-00000101' }
+
 /** @type {Scenario[]} */
 const scenarios = [
   scenario('GET', '/probe', undefined, [{ body: 'pong', headers: { 'content-type': 'text/plain' } }]),
@@ -93,6 +99,19 @@ const scenarios = [
 
   scenario('GET', `/${BUCKET}/dir/stream.txt`, undefined, [{ body: STREAM_BODY, headers: { etag: '"etag-stream"' } }]),
 
+  // The sink cases get routes of their own, so their counters cannot be moved by the buffered ones.
+  scenario('GET', `/${BUCKET}/dir/sink.txt`, undefined, [{ body: STREAM_BODY, headers: { etag: '"etag-stream"' } }]),
+
+  scenario('GET', `/${BUCKET}/dir/sink-missing.txt`, undefined, [
+    { status: 404, body: NO_SUCH_KEY, headers: ERROR_HEADERS },
+  ]),
+
+  // A failure with no mark on it, which is what the service does not send: the transport has no signal for
+  // it before the body arrives, so the document ends up wherever the caller's bytes were going.
+  scenario('GET', `/${BUCKET}/dir/sink-unmarked.txt`, undefined, [
+    { status: 404, body: NO_SUCH_KEY, headers: { 'x-oss-request-id': 'req-404' } },
+  ]),
+
   scenario('PUT', `/${BUCKET}/dir/hello.json`, undefined, [{ headers: { etag: '"etag-1"' } }]),
 
   // Reserved for the rejected upload: a route that exists proves the request never reached the socket.
@@ -100,15 +119,17 @@ const scenarios = [
 
   // The retry case: refused once, then accepted, so the second attempt's ETag is the one the reader sees.
   scenario('PUT', `/${BUCKET}/dir/flaky.txt`, undefined, [
-    { status: 503, body: INTERNAL_ERROR },
-    { headers: { etag: '"etag-2"' } },
+    { status: 503, body: INTERNAL_ERROR, headers: ERROR_HEADERS },
+    { headers: { ...BASE_HEADERS, etag: '"etag-2"' } },
   ]),
 
   // Answers 503 forever, for the case that caps the attempt budget at one.
-  scenario('PUT', `/${BUCKET}/dir/stopped.txt`, undefined, [{ status: 503, body: INTERNAL_ERROR }]),
+  scenario('PUT', `/${BUCKET}/dir/stopped.txt`, undefined, [
+    { status: 503, body: INTERNAL_ERROR, headers: ERROR_HEADERS },
+  ]),
 
   scenario('GET', `/${BUCKET}/dir/missing.txt`, undefined, [
-    { status: 404, body: NO_SUCH_KEY, headers: { 'x-oss-request-id': 'req-404' } },
+    { status: 404, body: NO_SUCH_KEY, headers: { ...ERROR_HEADERS, 'x-oss-request-id': 'req-404' } },
   ]),
 
   // Declaring the token-bearing page separately is what proves the cursor actually round-tripped: without
