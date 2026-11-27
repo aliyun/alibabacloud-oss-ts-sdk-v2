@@ -1,10 +1,13 @@
 import { picker } from '@kit.CoreFileKit'
+import { common } from '@kit.AbilityKit'
 import fs from '@ohos.file.fs'
 import { BusinessError } from '@ohos.base'
 import {
   Client,
   DeleteBucket,
   DeleteObject,
+  FileSinkFactory,
+  FileSinkOptions,
   GetObject,
   HeadObject,
   ListObjectsV2,
@@ -85,6 +88,10 @@ export struct OssConsole {
   @State selectedName: string = ''
   @State showProgress: boolean = false
   @State uploadPercent: number = 0
+  @State downloadPath: string = ''
+  @State partSizeText: string = ''
+  @State concurrencyText: string = '1'
+  @State downloadPercent: number = 0
   @State output: string = ''
 
   build() {
@@ -135,9 +142,22 @@ export struct OssConsole {
         }
         Flex({ wrap: FlexWrap.Wrap }) {
           Button('PutObject').onClick(() => { this.putObject() })
-          Button('GetObject').onClick(() => { this.getObject() })
           Button('HeadObject').onClick(() => { this.headObject() })
           Button('DeleteObject').onClick(() => { this.deleteObject() })
+        }.width('100%')
+
+        Text('下载').fontSize(16).width('100%')
+        this.field('下载路径（空则写到缓存目录）', this.downloadPath, (value: string) => { this.downloadPath = value }, false)
+        this.field('分片大小（字节，空为对象的 1/10）', this.partSizeText, (value: string) => { this.partSizeText = value }, false)
+        this.field('并发数（1 为顺序）', this.concurrencyText, (value: string) => { this.concurrencyText = value }, false)
+        Progress({ value: this.downloadPercent, total: 100, type: ProgressType.Linear })
+          .width('100%')
+          .height(12)
+          .color('#0A59F7')
+        Flex({ wrap: FlexWrap.Wrap }) {
+          Button('下载到内存').onClick(() => { this.getObject() })
+          Button('下载到文件').onClick(() => { this.getObjectToFile() })
+          Button('分片下载').onClick(() => { this.downloadInParts() })
         }.width('100%')
 
         Text('Presign').fontSize(16).width('100%')
@@ -293,8 +313,129 @@ export struct OssConsole {
       const result = await this.client().send(new GetObject({ bucket: name, key: key }))
       const body = (await result.body?.text()) ?? ''
       const shown = body.length > 512 ? body.slice(0, 512) + ' …' : body
-      return 'downloaded ' + key + '\ncontentType: ' + result.contentType + '\nbody:\n' + shown
+      return 'downloaded ' + key + ' into memory\ncontentType: ' + result.contentType + '\nbody:\n' + shown
     })
+  }
+
+  private getObjectToFile(): void {
+    const name = this.bucketName
+    const key = this.objectKey
+    const path = this.downloadTarget(key)
+    this.downloadPercent = 0
+    this.run(async (): Promise<string> => {
+      const result = await this.client().getObjectToFile({ bucket: name, key: key }, path)
+      this.downloadPercent = 100
+      return 'downloaded ' + key + ' to ' + path + '\nstatus: ' + result.statusCode
+    })
+  }
+
+  private downloadInParts(): void {
+    const name = this.bucketName
+    const key = this.objectKey
+    const path = this.downloadTarget(key)
+    const partText = this.partSizeText
+    const concurrency = this.concurrency()
+    this.downloadPercent = 0
+    this.run(async (): Promise<string> => {
+      const head = await this.client().send(new HeadObject({ bucket: name, key: key }))
+      const size = head.contentLength ?? -1
+      if (size < 0) {
+        return '对象没有 Content-Length，不能分片'
+      }
+      const partSize = this.partSize(size, partText)
+      await this.prepareDownloadFile(path)
+      if (size === 0) {
+        this.downloadPercent = 100
+        return 'downloaded ' + key + ' to ' + path + '\nsize: 0\nparts: 0'
+      }
+      const parts = await this.writeRanges(name, key, path, size, partSize, concurrency)
+      this.downloadPercent = 100
+      return 'downloaded ' + key + ' to ' + path +
+        '\nsize: ' + size +
+        '\npartSize: ' + partSize +
+        '\nparts: ' + parts +
+        '\nconcurrency: ' + concurrency
+    })
+  }
+
+  private downloadTarget(key: string): string {
+    if (this.downloadPath.length > 0) {
+      return this.downloadPath
+    }
+    const slash = key.lastIndexOf('/')
+    const name = slash >= 0 ? key.substring(slash + 1) : key
+    const fileName = name.length > 0 ? name : 'object.bin'
+    const context = this.getUIContext().getHostContext() as common.UIAbilityContext
+    return context.cacheDir + '/' + fileName
+  }
+
+  private partSize(objectSize: number, text: string): number {
+    const parsed = Number.parseInt(text, 10)
+    if (parsed >= 1) {
+      return parsed > objectSize ? objectSize : parsed
+    }
+    const tenth = Math.floor(objectSize / 10)
+    return tenth >= 1 ? tenth : 1
+  }
+
+  private concurrency(): number {
+    const parsed = Number.parseInt(this.concurrencyText, 10)
+    return parsed >= 1 ? parsed : 1
+  }
+
+  private async prepareDownloadFile(path: string): Promise<void> {
+    const opened = await fs.open(path, fs.OpenMode.WRITE_ONLY | fs.OpenMode.CREATE | fs.OpenMode.TRUNC)
+    await fs.close(opened)
+  }
+
+  private async writeRanges(
+    bucket: string,
+    key: string,
+    path: string,
+    size: number,
+    partSize: number,
+    width: number,
+  ): Promise<number> {
+    const starts: number[] = []
+    let cursor = 0
+    while (cursor < size) {
+      starts.push(cursor)
+      const step = partSize < size - cursor ? partSize : size - cursor
+      cursor += step
+    }
+    const total = starts.length
+    let next = 0
+    let written = 0
+    const client = this.client()
+    const runOne = async (): Promise<void> => {
+      while (next < total) {
+        const index = next
+        next = next + 1
+        const start = starts[index]
+        const length = index + 1 < total ? starts[index + 1] - start : size - start
+        const end = start + length - 1
+        const sinkOptions: FileSinkOptions = { offset: start }
+        await client.send(new GetObject({
+          bucket: bucket,
+          key: key,
+          range: 'bytes=' + start.toString() + '-' + end.toString(),
+          sinkFactory: new FileSinkFactory(path, sinkOptions),
+        }))
+        written = written + length
+        const percent = Math.round((written * 100) / size)
+        this.downloadPercent = percent > 100 ? 100 : percent
+      }
+    }
+    const jobs: Promise<void>[] = []
+    let workers = width
+    if (workers > total) {
+      workers = total
+    }
+    for (let i = 0; i < workers; i++) {
+      jobs.push(runOne())
+    }
+    await Promise.all(jobs)
+    return total
   }
 
   private headObject(): void {
