@@ -189,6 +189,7 @@ export interface GetObjectRequest extends RequestModel {
   /**
    * Where the object goes as it arrives, instead of into a buffered body. The factory is asked for a sink
    * once per attempt, and a runtime that cannot stream rejects the call with `NotSupportedError`.
+   * `MemorySinkFactory` fills a buffer you own; a Harmony runtime offers a file sink.
    */
   sinkFactory?: ByteSinkFactory
 }
