@@ -1,8 +1,18 @@
 import { describe, expect, it } from '@ohos/hypium'
 import netstack from '@ohos.net.http'
-import { GetObject, OperationError, PutObject, SerializationError, ServiceError, streamBody } from '../../../Index'
+import { GetObject, MemorySinkFactory, OperationError, PutObject, SerializationError, ServiceError, streamBody } from '../../../Index'
 import { SingleChunkStream } from '../unit/MockSupport'
 import { BUCKET, CollectingSinkFactory, createClient, OBJECT_BODY, probeCount, STUB, STREAM_HALF, STREAM_LENGTH } from './Stubs'
+
+/** A netstack `BusinessError`: an `Error` carrying a numeric code. */
+interface BusinessError extends Error {
+  code?: number
+}
+
+/** The character a downloaded buffer holds at an index. */
+function byteAsChar(buffer: Uint8Array, index: number): string {
+  return String.fromCharCode(buffer[index])
+}
 
 /**
  * The cases the node mock suite runs against the real transport, here against `@ohos.net.http` in the
@@ -171,6 +181,96 @@ export default function transportTest() {
       expect(factory.made()).assertEqual(1)
       expect(factory.last().charAt(0)).assertEqual('<')
       expect(await probeCount('count', 'GET', path)).assertEqual(1)
+    })
+
+    // netstack applies `maxLimit` to a buffered body only, so this body arrives whole when streamed and is
+    // refused at the same cap when buffered.
+    it('streams a body larger than the maxLimit the buffered call refuses', 0, async () => {
+      const url = STUB + '/' + BUCKET + '/dir/sink.txt'
+      const cap = 64 * 1024
+      const options: netstack.HttpRequestOptions = {
+        method: netstack.RequestMethod.GET,
+        expectDataType: netstack.HttpDataType.ARRAY_BUFFER,
+        maxLimit: cap,
+        readTimeout: 5000,
+      }
+
+      const stream = netstack.createHttp()
+      let received = 0
+      let refused = 0
+      await new Promise<void>((resolve: () => void) => {
+        stream.on('dataReceive', (chunk: ArrayBuffer) => {
+          received += chunk.byteLength
+        })
+        stream.requestInStream(url, options).then((_code: number) => {
+          resolve()
+        }, (err: Object) => {
+          refused = (err as BusinessError).code ?? 0
+          resolve()
+        })
+      })
+      stream.destroy()
+
+      expect(refused).assertEqual(0)
+      expect(received).assertEqual(STREAM_LENGTH)
+
+      const buffered = netstack.createHttp()
+      let capped = 0
+      try {
+        await buffered.request(url, options)
+      } catch (caught) {
+        capped = (caught as BusinessError).code ?? 0
+      }
+      buffered.destroy()
+
+      // The control: the cap is honoured where it applies.
+      expect(capped).assertEqual(2300023)
+    })
+
+    it('fills a caller-owned buffer with a streamed body', 0, async () => {
+      const path = '/' + BUCKET + '/dir/sink.txt'
+      const before = await probeCount('count', 'GET', path)
+      const buffer = new Uint8Array(STREAM_LENGTH)
+      const factory = new MemorySinkFactory(buffer)
+
+      const result = await createClient().send(
+        new GetObject({ bucket: BUCKET, key: 'dir/sink.txt', sinkFactory: factory }),
+      )
+      const held = (await result.body?.bytes())?.length ?? -1
+
+      expect(result.statusCode).assertEqual(200)
+      expect(factory.written).assertEqual(STREAM_LENGTH)
+      expect(byteAsChar(buffer, 0)).assertEqual('a')
+      expect(byteAsChar(buffer, STREAM_HALF - 1)).assertEqual('a')
+      expect(byteAsChar(buffer, STREAM_HALF)).assertEqual('b')
+      expect(byteAsChar(buffer, STREAM_LENGTH - 1)).assertEqual('b')
+      expect(held).assertEqual(0)
+      // The route is shared, so only the delta says anything.
+      expect(await probeCount('count', 'GET', path)).assertEqual(before + 1)
+    })
+
+    it('refuses a body that will not fit the buffer it was given', 0, async () => {
+      const path = '/' + BUCKET + '/dir/sink.txt'
+      const before = await probeCount('count', 'GET', path)
+      const buffer = new Uint8Array(STREAM_HALF)
+      const factory = new MemorySinkFactory(buffer)
+      let error: Error | undefined
+      try {
+        await createClient().send(
+          new GetObject({ bucket: BUCKET, key: 'dir/sink.txt', sinkFactory: factory }),
+        )
+      } catch (caught) {
+        error = caught as Error
+      }
+
+      expect(error instanceof OperationError).assertTrue()
+      if (error instanceof OperationError) {
+        const refusal = 'does not fit the ' + String(STREAM_HALF) + ' bytes left'
+        expect(error.contains((cause) => cause.message.indexOf(refusal) >= 0) !== undefined).assertTrue()
+      }
+      expect(factory.written).assertEqual(0)
+      // One attempt: the refusal earns no retry.
+      expect(await probeCount('count', 'GET', path)).assertEqual(before + 1)
     })
   })
 }

@@ -51,6 +51,7 @@ const SURFACE = [
   'ListObjectsV2Paginator',
   'ListParts',
   'ListPartsPaginator',
+  'MemorySinkFactory',
   'NopRetryer',
   'NotSupportedError',
   'OperationError',
@@ -185,6 +186,7 @@ describe('public surface', () => {
     expect(sdk.TransportCapabilityType.FILLS_CONTENT_TYPE).toBe('fillsContentType')
     expect(sdk.TransportCapabilityType.SINK_FACTORY).toBe('sinkFactory')
     expect(typeof sdk.toOneShotSinkFactory).toBe('function')
+    expect(typeof sdk.MemorySinkFactory).toBe('function')
   })
 
   it('exports the error classes a caller branches on', () => {

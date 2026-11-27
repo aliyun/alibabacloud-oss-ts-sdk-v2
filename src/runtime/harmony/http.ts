@@ -246,17 +246,27 @@ class SinkPump {
     return this.marked ? concatBytes(this.errorDoc) : undefined
   }
 
-  /** Ends the attempt: every byte the sink was to take had already been handed over. */
+  /** Ends a successful attempt: every byte the sink was to take had already been handed over. */
   async settle(): Promise<void> {
     await this.writes
     await this.close()
   }
 
-  /** Gives the sink back, whichever way the attempt ended; the next attempt gets a fresh one. */
+  /**
+   * Gives the sink back, whichever way the attempt ended; the next attempt gets a fresh one. Bytes still
+   * queued belong to an attempt being thrown away, so they go unwritten. A write the sink was already told
+   * about, though, has to land before its descriptor is released: a close that overtakes one leaves it
+   * running against a file the retry has since reopened, or against whatever else took the number. A sink
+   * which is itself why the attempt ended is not waited for -- it has refused bytes, or is not keeping up.
+   */
   async close(): Promise<void> {
     const sink = this.sink
     this.sink = undefined
     if (sink === undefined) return
+    // Draining stops at the write in flight, since the chain takes its next byte from here.
+    this.queued.length = 0
+    this.queuedBytes = 0
+    if (this.failure === undefined) await this.writes
     try {
       await sink.close?.()
     } catch (error) {
@@ -350,7 +360,7 @@ function parseProxy(proxyHost: string): HarmonyHttpProxy | undefined {
  *    `StreamContent` request body raises `SerializationError`; a replayable body (bytes, string, or a
  *    `FileContent`) is drained into memory and sent whole, and a larger object needs ranged requests.
  *    Upload progress is still observable: netstack reports the buffered body draining to the socket. A
- *    response with a `sinkFactory` is not buffered and takes no platform size limit.
+ *    response with a `sinkFactory` is streamed, and `maxLimit` bounds a buffered body only.
  * 2. **`readWriteTimeoutMs` is ignored.** netstack exposes a whole-transfer deadline rather than an
  *    idle deadline; a total request budget can be supplied through `signal`.
  * 3. **The `User-Agent` names no platform.** `Config.userAgent` does reach the network.

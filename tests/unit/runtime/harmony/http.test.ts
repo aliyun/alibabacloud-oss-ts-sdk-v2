@@ -9,7 +9,7 @@ import {
 import type { RawHeaders } from '../../../../src/runtime/harmony/headers.js'
 import type { AbortSignalLike } from '../../../../src/utils/abort.js'
 import type { ByteContent, ByteSink, ByteSinkFactory, RequestMessage, StreamLike } from '../../../../src/transport/types.js'
-import { toOneShotSinkFactory, TransportCapabilityType } from '../../../../src/transport/types.js'
+import { toOneShotSinkFactory, MemorySinkFactory, TransportCapabilityType } from '../../../../src/transport/types.js'
 import { bytesBody, stringBody, streamBody } from '../../../../src/transport/content.js'
 import {
   CanceledError,
@@ -209,6 +209,9 @@ function failWith(error: Error): () => Promise<HttpResponse> {
 }
 
 const stalled = (): Promise<HttpResponse> => new Promise<HttpResponse>(() => undefined)
+
+/** Runs the sink chain as far as it can go on its own, i.e. up to a write the test has not resolved. */
+const settled = (): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, 0))
 
 function request(overrides: Partial<RequestMessage> = {}): RequestMessage {
   return {
@@ -803,7 +806,8 @@ describe('createHarmonyTransport sinkFactory', () => {
     expect(fake.destroyed).toBe(1)
   })
 
-  // netstack cannot be slowed down, so a sink that stops taking bytes ends the transfer instead.
+  // netstack cannot be slowed down, so a sink that stops taking bytes ends the transfer instead. The write it
+  // never finished is deliberately not waited for on the way out: the sink is the failure, not the network.
   it('ends the transfer when the sink falls behind, and says why', async () => {
     const fake = fakeStreamModule((call) => {
       call.emitHeaders({})
@@ -820,6 +824,57 @@ describe('createHarmonyTransport sinkFactory', () => {
     expect(error).toBeInstanceOf(OssError)
     expect(error?.message).toContain('fell behind')
     expect(new ClientErrorRetryable().isErrorRetryable(error!)).toBe(false)
+    expect(fake.destroyed).toBe(1)
+  })
+
+  // A descriptor released underneath its own write hands that write to whatever the file became by then, so
+  // the attempt is not reported until the bytes it was told about have landed.
+  it('gives the sink back only after the write in flight has landed', async () => {
+    const order: string[] = []
+    let land: (() => void) | undefined
+    const sink: ByteSink = {
+      write(): Promise<void> {
+        order.push('write')
+        return new Promise<void>((resolve) => {
+          land = (): void => {
+            order.push('landed')
+            resolve()
+          }
+        })
+      },
+      close(): Promise<void> {
+        order.push('close')
+        return Promise.resolve()
+      },
+    }
+    let refuse: ((error: Error) => void) | undefined
+    const fake = fakeStreamModule((call) => {
+      call.emitHeaders({})
+      call.emitData(utf8Encode('first'))
+      call.emitData(utf8Encode('second'))
+      return new Promise<number>((_resolve, reject) => {
+        refuse = reject
+      })
+    })
+
+    const sent = createHarmonyTransport({ http: fake }).send(request(), {
+      sinkFactory: toOneShotSinkFactory(sink),
+    })
+    await settled()
+    expect(order).toEqual(['write'])
+
+    refuse!(nativeError(2300018, 'partial file'))
+    await settled()
+    // A transient read failure is retried, so nothing may still be writing when the attempt is handed back.
+    expect(order).toEqual(['write'])
+
+    land!()
+    const error = await sent.then((): undefined => undefined, (err: unknown) => err as Error)
+
+    expect(error).toBeInstanceOf(RequestError)
+    expect(new ClientErrorRetryable().isErrorRetryable(error!)).toBe(true)
+    expect(error?.message).toContain('2300018')
+    expect(order).toEqual(['write', 'landed', 'close'])
     expect(fake.destroyed).toBe(1)
   })
 
@@ -964,6 +1019,48 @@ describe('createHarmonyTransport sinkFactory', () => {
     expect(made).toBe(2)
     expect(collected[0].text()).toBe('attempt')
     expect(collected[1].text()).toBe('attempt')
+  })
+
+  // The room is what the caller allocated, not what netstack agrees to hold.
+  it('fills a caller-sized buffer with a body longer than the buffered path keeps', async () => {
+    const body = 'z'.repeat(64 * 1024)
+    const fake = fakeStreamModule((call) => {
+      call.emitHeaders({ 'content-length': String(body.length) })
+      for (const part of parts(body, 16 * 1024)) call.emitData(utf8Encode(part))
+      return Promise.resolve(200)
+    })
+    const buffer = new Uint8Array(body.length + 8)
+    buffer.set(utf8Encode('sentinel'), body.length)
+    const factory = new MemorySinkFactory(buffer)
+
+    const response = await createHarmonyTransport({ http: fake }).send(request(), { sinkFactory: factory })
+
+    expect(factory.written).toBe(body.length)
+    expect(utf8Decode(buffer.subarray(0, 16))).toBe('zzzzzzzzzzzzzzzz')
+    expect(utf8Decode(buffer.subarray(body.length))).toBe('sentinel')
+    expect(await response.body?.bytes()).toEqual(new Uint8Array(0))
+    expect(fake.destroyed).toBe(1)
+  })
+
+  // Too small a buffer is the caller's to resize, so no retry follows the refusal.
+  it('refuses a body the buffer cannot hold, at the declaration rather than the last byte', async () => {
+    const fake = fakeStreamModule((call) => {
+      call.emitHeaders({ 'content-length': '1024' })
+      call.emitData(utf8Encode('a'.repeat(1024)))
+      return Promise.resolve(200)
+    })
+    const factory = new MemorySinkFactory(new Uint8Array(64))
+
+    const error = await createHarmonyTransport({ http: fake })
+      .send(request(), { sinkFactory: factory })
+      .then(() => undefined)
+      .catch((err: unknown) => err as Error)
+
+    expect(error).toBeInstanceOf(OssError)
+    expect(error?.message).toContain('declares 1024 bytes, which does not fit the 64 bytes left')
+    expect(factory.written).toBe(0)
+    expect(new ClientErrorRetryable().isErrorRetryable(error!)).toBe(false)
+    expect(fake.destroyed).toBe(1)
   })
 
   it('leaves the buffered path alone when no sink is given', async () => {

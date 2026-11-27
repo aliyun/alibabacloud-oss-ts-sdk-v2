@@ -1,4 +1,5 @@
 import type { AbortSignalLike } from '../utils/abort.js'
+import { OssError } from '../error/types.js'
 
 /** Minimal pull-stream contract. */
 export interface StreamLike {
@@ -45,6 +46,80 @@ export function toOneShotSinkFactory(sink: ByteSink): ByteSinkFactory {
   return {
     supplier: (): ByteSink => sink,
     oneShot: true,
+  }
+}
+
+/** Where in a caller's buffer a downloaded body goes. */
+export interface MemorySinkOptions {
+  /** Where the first byte goes, defaulting to the start of the buffer. */
+  offset?: number
+}
+
+/** Writes a downloaded body into the rest of a caller's buffer, refusing a chunk that does not fit. */
+class MemorySink implements ByteSink {
+  /** Bytes written, which is where the next chunk goes. */
+  written = 0
+
+  private readonly buffer: Uint8Array
+  private readonly start: number
+  /** How much room the buffer had when the attempt started. */
+  private readonly room: number
+  /** The length the response declared, or `-1` when it declared none. */
+  private readonly declared: number
+
+  constructor(buffer: Uint8Array, start: number, declared: number) {
+    this.buffer = buffer
+    this.start = start
+    this.room = buffer.byteLength - start
+    this.declared = declared
+  }
+
+  write(chunk: Uint8Array): void {
+    if (chunk.byteLength > this.room - this.written) throw new OssError(this.refused())
+    this.buffer.set(chunk, this.start + this.written)
+    this.written += chunk.byteLength
+  }
+
+  /** Names the room the buffer offered and the length that outgrew it. */
+  private refused(): string {
+    const declared = this.declared >= 0 ? ', of which it declared ' + String(this.declared) + ' bytes in all' : ''
+    return 'the response body does not fit the ' + String(this.room) + ' bytes left in the buffer for it' + declared
+  }
+}
+
+/**
+ * A `ByteSinkFactory` over a buffer the caller owns, so a download is bounded by what was allocated rather
+ * than by what the transport holds in memory. Every attempt refills the same range, so `oneShot` is false,
+ * and a body longer than the room ends the attempt with `OssError` -- a failure no retry can improve.
+ */
+export class MemorySinkFactory implements ByteSinkFactory {
+  /** Each attempt refills the same range of the caller's buffer. */
+  readonly oneShot: boolean = false
+
+  private readonly buffer: Uint8Array
+  private readonly start: number
+  /** The sink of the attempt that ran last, which is what `written` reports. */
+  private last: MemorySink | undefined
+
+  constructor(buffer: Uint8Array, options?: MemorySinkOptions) {
+    this.buffer = buffer
+    this.start = options?.offset ?? 0
+  }
+
+  /** Bytes the last attempt wrote, counting from `offset`. */
+  get written(): number {
+    return this.last?.written ?? 0
+  }
+
+  /** Opens one attempt's sink, refusing a declared length that will not fit before pulling the body. */
+  supplier(size: number, _headers: Record<string, string>): ByteSink {
+    const room = this.buffer.byteLength - this.start
+    if (size > room) {
+      throw new OssError('the response declares ' + String(size) + ' bytes, which does not fit the ' + String(room) + ' bytes left in the buffer for it')
+    }
+    const sink = new MemorySink(this.buffer, this.start, size)
+    this.last = sink
+    return sink
   }
 }
 
