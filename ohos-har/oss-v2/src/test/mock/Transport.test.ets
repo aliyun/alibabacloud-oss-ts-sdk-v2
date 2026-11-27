@@ -4,6 +4,11 @@ import { GetObject, OperationError, PutObject, SerializationError, ServiceError,
 import { SingleChunkStream } from '../unit/MockSupport'
 import { BUCKET, CollectingSinkFactory, createClient, OBJECT_BODY, probeCount, STUB, STREAM_HALF, STREAM_LENGTH } from './Stubs'
 
+/** A netstack `BusinessError`: an `Error` carrying a numeric code. */
+interface BusinessError extends Error {
+  code?: number
+}
+
 /**
  * The cases the node mock suite runs against the real transport, here against `@ohos.net.http` in the
  * Previewer. Responses are buffered whole on this platform unless the caller hands over a sink factory, so
@@ -171,6 +176,50 @@ export default function transportTest() {
       expect(factory.made()).assertEqual(1)
       expect(factory.last().charAt(0)).assertEqual('<')
       expect(await probeCount('count', 'GET', path)).assertEqual(1)
+    })
+
+    // netstack applies `maxLimit` to a buffered body only, so this body arrives whole when streamed and is
+    // refused at the same cap when buffered.
+    it('streams a body larger than the maxLimit the buffered call refuses', 0, async () => {
+      const url = STUB + '/' + BUCKET + '/dir/sink.txt'
+      const cap = 64 * 1024
+      const options: netstack.HttpRequestOptions = {
+        method: netstack.RequestMethod.GET,
+        expectDataType: netstack.HttpDataType.ARRAY_BUFFER,
+        maxLimit: cap,
+        readTimeout: 5000,
+      }
+
+      const stream = netstack.createHttp()
+      let received = 0
+      let refused = 0
+      await new Promise<void>((resolve: () => void) => {
+        stream.on('dataReceive', (chunk: ArrayBuffer) => {
+          received += chunk.byteLength
+        })
+        stream.requestInStream(url, options).then((_code: number) => {
+          resolve()
+        }, (err: Object) => {
+          refused = (err as BusinessError).code ?? 0
+          resolve()
+        })
+      })
+      stream.destroy()
+
+      expect(refused).assertEqual(0)
+      expect(received).assertEqual(STREAM_LENGTH)
+
+      const buffered = netstack.createHttp()
+      let capped = 0
+      try {
+        await buffered.request(url, options)
+      } catch (caught) {
+        capped = (caught as BusinessError).code ?? 0
+      }
+      buffered.destroy()
+
+      // The control: the cap is honoured where it applies.
+      expect(capped).assertEqual(2300023)
     })
   })
 }
