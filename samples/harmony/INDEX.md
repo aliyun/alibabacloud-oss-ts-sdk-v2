@@ -43,8 +43,9 @@ command line, with the HarmonyOS command-line tools on `PATH` and `DEVECO_SDK_HO
 
 These are limits of `@ohos.net.http`, not of the operations themselves.
 
-- **Bodies are buffered.** A request body must be a string or `Uint8Array`, not a stream; a response is
-  buffered and capped at 100 MiB, so a larger download takes a `sinkFactory` instead. See
+- **Request bodies are buffered.** A local file is passed as a path through `fileBody`; the sample does not
+  read it into one `Uint8Array` first. `@ohos.net.http` still takes the whole request body in one buffer.
+- **A buffered response is capped at 100 MiB.** A larger download takes a `sinkFactory` instead. See
   [UseMemorySink.ets](entry/src/main/ets/scenario/UseMemorySink.ets) and
   [UseFileSink.ets](entry/src/main/ets/scenario/UseFileSink.ets).
 - **`readWriteTimeoutMs` is not an idle timeout.** netstack's read timeout is a deadline for the whole

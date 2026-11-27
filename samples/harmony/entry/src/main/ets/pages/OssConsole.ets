@@ -4,6 +4,7 @@ import fs from '@ohos.file.fs'
 import { BusinessError } from '@ohos.base'
 import {
   Client,
+  fileBody,
   DeleteBucket,
   DeleteObject,
   FileSinkFactory,
@@ -58,18 +59,6 @@ function fileNameOf(uri: string): string {
   const slash = path.lastIndexOf('/')
   const raw = slash >= 0 ? path.substring(slash + 1) : path
   return decodeURIComponent(raw)
-}
-
-async function readLocalFile(uri: string): Promise<Uint8Array> {
-  const stat = await fs.stat(uri)
-  const file = await fs.open(uri, fs.OpenMode.READ_ONLY)
-  try {
-    const buffer = new ArrayBuffer(stat.size)
-    const read = await fs.read(file.fd, buffer, { offset: 0, length: stat.size })
-    return new Uint8Array(buffer, 0, read)
-  } finally {
-    await fs.close(file)
-  }
 }
 
 /** ArkUI console for the same calls the `api/` samples make. Credentials stay in this page. */
@@ -288,7 +277,7 @@ export struct OssConsole {
     this.uploadPercent = 0
     this.run(async (): Promise<string> => {
       const command = fileUri.length > 0
-        ? new PutObject({ bucket: name, key: key, body: await readLocalFile(fileUri) })
+        ? new PutObject({ bucket: name, key: key, body: await fileBody(fileUri) })
         : new PutObject({ bucket: name, key: key, body: bodyText, contentType: 'text/plain' })
       const handler: ProgressHandler = (_increment: number, transferred: number, total: number): void => {
         if (total > 0) {
