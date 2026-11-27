@@ -1,12 +1,17 @@
 import { describe, expect, it } from '@ohos/hypium'
 import netstack from '@ohos.net.http'
-import { GetObject, OperationError, PutObject, SerializationError, ServiceError, streamBody } from '../../../Index'
+import { GetObject, MemorySinkFactory, OperationError, PutObject, SerializationError, ServiceError, streamBody } from '../../../Index'
 import { SingleChunkStream } from '../unit/MockSupport'
 import { BUCKET, CollectingSinkFactory, createClient, OBJECT_BODY, probeCount, STUB, STREAM_HALF, STREAM_LENGTH } from './Stubs'
 
 /** A netstack `BusinessError`: an `Error` carrying a numeric code. */
 interface BusinessError extends Error {
   code?: number
+}
+
+/** The character a downloaded buffer holds at an index. */
+function byteAsChar(buffer: Uint8Array, index: number): string {
+  return String.fromCharCode(buffer[index])
 }
 
 /**
@@ -220,6 +225,52 @@ export default function transportTest() {
 
       // The control: the cap is honoured where it applies.
       expect(capped).assertEqual(2300023)
+    })
+
+    it('fills a caller-owned buffer with a streamed body', 0, async () => {
+      const path = '/' + BUCKET + '/dir/sink.txt'
+      const before = await probeCount('count', 'GET', path)
+      const buffer = new Uint8Array(STREAM_LENGTH)
+      const factory = new MemorySinkFactory(buffer)
+
+      const result = await createClient().send(
+        new GetObject({ bucket: BUCKET, key: 'dir/sink.txt', sinkFactory: factory }),
+      )
+      const held = (await result.body?.bytes())?.length ?? -1
+
+      expect(result.statusCode).assertEqual(200)
+      expect(factory.written).assertEqual(STREAM_LENGTH)
+      expect(byteAsChar(buffer, 0)).assertEqual('a')
+      expect(byteAsChar(buffer, STREAM_HALF - 1)).assertEqual('a')
+      expect(byteAsChar(buffer, STREAM_HALF)).assertEqual('b')
+      expect(byteAsChar(buffer, STREAM_LENGTH - 1)).assertEqual('b')
+      expect(held).assertEqual(0)
+      // The route is shared, so only the delta says anything.
+      expect(await probeCount('count', 'GET', path)).assertEqual(before + 1)
+    })
+
+    it('refuses a body that will not fit the buffer it was given', 0, async () => {
+      const path = '/' + BUCKET + '/dir/sink.txt'
+      const before = await probeCount('count', 'GET', path)
+      const buffer = new Uint8Array(STREAM_HALF)
+      const factory = new MemorySinkFactory(buffer)
+      let error: Error | undefined
+      try {
+        await createClient().send(
+          new GetObject({ bucket: BUCKET, key: 'dir/sink.txt', sinkFactory: factory }),
+        )
+      } catch (caught) {
+        error = caught as Error
+      }
+
+      expect(error instanceof OperationError).assertTrue()
+      if (error instanceof OperationError) {
+        const refusal = 'does not fit the ' + String(STREAM_HALF) + ' bytes left'
+        expect(error.contains((cause) => cause.message.indexOf(refusal) >= 0) !== undefined).assertTrue()
+      }
+      expect(factory.written).assertEqual(0)
+      // One attempt: the refusal earns no retry.
+      expect(await probeCount('count', 'GET', path)).assertEqual(before + 1)
     })
   })
 }

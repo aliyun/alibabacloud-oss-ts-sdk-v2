@@ -37,8 +37,10 @@ export type {
   ByteSource,
   ByteSink,
   ByteSinkFactory,
+  MemorySinkOptions,
 } from './transport/types.js'
-export { toOneShotSinkFactory } from './transport/types.js'
+// Response-body sinks, for a download that goes somewhere other than the SDK's buffer.
+export { toOneShotSinkFactory, MemorySinkFactory } from './transport/types.js'
 // Request-body descriptors and their factories, for building a body explicitly.
 export { BytesContent, StringContent, StreamContent, bytesBody, stringBody, streamBody } from './transport/content.js'
 export type { AbortSignalLike } from './utils/abort.js'
