@@ -10,6 +10,9 @@ const stsAccessKeyId = ''
 const stsAccessKeySecret = ''
 const stsSecurityToken = ''
 
+// Where a sample may write a file. A UI page can use `getContext(this).filesDir` instead.
+const filesDirName = '/data/storage/el2/base/haps/entry/files'
+
 export function createClient(): Client {
   return new Client({
     region: region,
@@ -20,6 +23,11 @@ export function createClient(): Client {
 
 export function bucket(): string {
   return bucketName
+}
+
+/** The directory a sample may write a file to. */
+export function filesDir(): string {
+  return filesDirName
 }
 
 /** Logs service error details found in an `OperationError` cause chain. */

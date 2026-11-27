@@ -27,7 +27,7 @@ are the same. Two things differ from node, both forced by the platform:
 | Path | Description |
 |---|---|
 | [entry/src/main/ets/api/](entry/src/main/ets/api/INDEX.md) | One sample per API operation |
-| [entry/src/main/ets/scenario/](entry/src/main/ets/scenario/INDEX.md) | Cross-cutting tasks: presigning, STS credentials, cancellation |
+| [entry/src/main/ets/scenario/](entry/src/main/ets/scenario/INDEX.md) | Cross-cutting tasks: presigning, STS credentials, cancellation, downloading through a sink |
 | `entry/src/main/ets/SampleConfig.ets` | The client setup, account constants and error reporter every sample shares; not a sample itself |
 | `entry/src/ohosTest/` | Device test: a smoke test driven through the public API |
 | `AppScope/`, `build-profile.json5`, `hvigor/` | DevEco project scaffolding |
@@ -43,8 +43,10 @@ command line, with the HarmonyOS command-line tools on `PATH` and `DEVECO_SDK_HO
 
 These are limits of `@ohos.net.http`, not of the operations themselves.
 
-- **Bodies are buffered.** A request body must be a string or `Uint8Array`, not a stream; a response
-  is buffered and capped at 100 MiB, so `GetObject` on a large object needs a ranged request.
+- **Bodies are buffered.** A request body must be a string or `Uint8Array`, not a stream; a response is
+  buffered and capped at 100 MiB, so a larger download takes a `sinkFactory` instead. See
+  [UseMemorySink.ets](entry/src/main/ets/scenario/UseMemorySink.ets) and
+  [UseFileSink.ets](entry/src/main/ets/scenario/UseFileSink.ets).
 - **`readWriteTimeoutMs` is not an idle timeout.** netstack's read timeout is a deadline for the whole
   transfer, so this transport leaves it at 0. `connectTimeoutMs` is passed through. Cancel an in-flight
   call with the signal from the cancellation sample.
