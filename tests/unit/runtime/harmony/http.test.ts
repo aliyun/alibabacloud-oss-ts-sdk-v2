@@ -210,6 +210,9 @@ function failWith(error: Error): () => Promise<HttpResponse> {
 
 const stalled = (): Promise<HttpResponse> => new Promise<HttpResponse>(() => undefined)
 
+/** Runs the sink chain as far as it can go on its own, i.e. up to a write the test has not resolved. */
+const settled = (): Promise<void> => new Promise<void>((resolve) => setTimeout(resolve, 0))
+
 function request(overrides: Partial<RequestMessage> = {}): RequestMessage {
   return {
     method: 'GET',
@@ -803,7 +806,8 @@ describe('createHarmonyTransport sinkFactory', () => {
     expect(fake.destroyed).toBe(1)
   })
 
-  // netstack cannot be slowed down, so a sink that stops taking bytes ends the transfer instead.
+  // netstack cannot be slowed down, so a sink that stops taking bytes ends the transfer instead. The write it
+  // never finished is deliberately not waited for on the way out: the sink is the failure, not the network.
   it('ends the transfer when the sink falls behind, and says why', async () => {
     const fake = fakeStreamModule((call) => {
       call.emitHeaders({})
@@ -820,6 +824,57 @@ describe('createHarmonyTransport sinkFactory', () => {
     expect(error).toBeInstanceOf(OssError)
     expect(error?.message).toContain('fell behind')
     expect(new ClientErrorRetryable().isErrorRetryable(error!)).toBe(false)
+    expect(fake.destroyed).toBe(1)
+  })
+
+  // A descriptor released underneath its own write hands that write to whatever the file became by then, so
+  // the attempt is not reported until the bytes it was told about have landed.
+  it('gives the sink back only after the write in flight has landed', async () => {
+    const order: string[] = []
+    let land: (() => void) | undefined
+    const sink: ByteSink = {
+      write(): Promise<void> {
+        order.push('write')
+        return new Promise<void>((resolve) => {
+          land = (): void => {
+            order.push('landed')
+            resolve()
+          }
+        })
+      },
+      close(): Promise<void> {
+        order.push('close')
+        return Promise.resolve()
+      },
+    }
+    let refuse: ((error: Error) => void) | undefined
+    const fake = fakeStreamModule((call) => {
+      call.emitHeaders({})
+      call.emitData(utf8Encode('first'))
+      call.emitData(utf8Encode('second'))
+      return new Promise<number>((_resolve, reject) => {
+        refuse = reject
+      })
+    })
+
+    const sent = createHarmonyTransport({ http: fake }).send(request(), {
+      sinkFactory: toOneShotSinkFactory(sink),
+    })
+    await settled()
+    expect(order).toEqual(['write'])
+
+    refuse!(nativeError(2300018, 'partial file'))
+    await settled()
+    // A transient read failure is retried, so nothing may still be writing when the attempt is handed back.
+    expect(order).toEqual(['write'])
+
+    land!()
+    const error = await sent.then((): undefined => undefined, (err: unknown) => err as Error)
+
+    expect(error).toBeInstanceOf(RequestError)
+    expect(new ClientErrorRetryable().isErrorRetryable(error!)).toBe(true)
+    expect(error?.message).toContain('2300018')
+    expect(order).toEqual(['write', 'landed', 'close'])
     expect(fake.destroyed).toBe(1)
   })
 

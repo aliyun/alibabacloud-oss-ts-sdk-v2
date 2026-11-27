@@ -246,17 +246,27 @@ class SinkPump {
     return this.marked ? concatBytes(this.errorDoc) : undefined
   }
 
-  /** Ends the attempt: every byte the sink was to take had already been handed over. */
+  /** Ends a successful attempt: every byte the sink was to take had already been handed over. */
   async settle(): Promise<void> {
     await this.writes
     await this.close()
   }
 
-  /** Gives the sink back, whichever way the attempt ended; the next attempt gets a fresh one. */
+  /**
+   * Gives the sink back, whichever way the attempt ended; the next attempt gets a fresh one. Bytes still
+   * queued belong to an attempt being thrown away, so they go unwritten. A write the sink was already told
+   * about, though, has to land before its descriptor is released: a close that overtakes one leaves it
+   * running against a file the retry has since reopened, or against whatever else took the number. A sink
+   * which is itself why the attempt ended is not waited for -- it has refused bytes, or is not keeping up.
+   */
   async close(): Promise<void> {
     const sink = this.sink
     this.sink = undefined
     if (sink === undefined) return
+    // Draining stops at the write in flight, since the chain takes its next byte from here.
+    this.queued.length = 0
+    this.queuedBytes = 0
+    if (this.failure === undefined) await this.writes
     try {
       await sink.close?.()
     } catch (error) {
