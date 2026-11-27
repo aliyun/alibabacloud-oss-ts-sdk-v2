@@ -16,8 +16,9 @@ as described in [../../../INDEX.md](../../../INDEX.md).
 
 `PutObject` overwrites the key if it already exists and leaves it behind; `DeleteObject` on the same
 default key is the cleanup. Pass your own key to keep out of the way of anyone else touring the
-bucket. `GetObject` buffers the whole body in memory (capped at 100 MiB here), so fetch a large
-object with a ranged request instead.
+bucket. `GetObject` buffers the whole body in memory (capped at 100 MiB here) — see
+[UseMemorySink.ets](../scenario/UseMemorySink.ets) and [UseFileSink.ets](../scenario/UseFileSink.ets)
+for taking the body somewhere else.
 
 ## Bucket operations
 
